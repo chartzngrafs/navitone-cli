@@ -6,11 +6,20 @@ Navitone-CLI is going to be terminal-based Navidrome music player at it's base l
     * A help menu overlay that provide shortcuts and useful, concise info - it needs to be context aware
     * Mouse support - this is a tricky one, but important 
 
-### Design
+### Current Implementation Status
 
-Think if you converted Feishin or Spotify to a TUI interface... needs to be untuitive and robust without being bloated. 
+**✅ COMPLETE - Audio System:**
+- Multi-format audio playback (MP3, FLAC, OGG, WAV)
+- Queue management with full controls
+- Audio streaming from Navidrome servers
+- Volume control and playback states
+- Format detection and proper PCM conversion
 
-Sections:
+**🚧 IN PROGRESS - Interface System:**
+- Basic TUI framework setup
+- Navigation structure planning
+
+**📋 TODO - Interface Sections:**
     
     * Albums
     * Album Artists

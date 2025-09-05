@@ -6,13 +6,14 @@ import (
 	"strconv"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"navitone-cli/internal/audio"
 	"navitone-cli/internal/config"
 	"navitone-cli/internal/models"
 	"navitone-cli/internal/views"
 	"navitone-cli/pkg/navidrome"
 	"navitone-cli/pkg/scrobbling"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // App represents the main application controller
@@ -47,17 +48,17 @@ func NewApp() *App {
 		state: state,
 		view:  views.NewMainView(state),
 	}
-	
+
 	// Initialize Navidrome client if config is valid
 	fmt.Printf("[APP DEBUG] Initializing Navidrome client...\n")
 	app.initializeNavidromeClient()
 	fmt.Printf("[APP DEBUG] Navidrome client initialized: %v\n", app.navidromeClient != nil)
-	
+
 	// Initialize scrobbling manager
 	fmt.Printf("[APP DEBUG] Initializing scrobbling manager...\n")
 	app.scrobbler = scrobbling.NewManager(cfg)
 	fmt.Printf("[APP DEBUG] Scrobbling manager initialized: %v\n", app.scrobbler != nil)
-	
+
 	// Initialize audio manager
 	if app.navidromeClient != nil {
 		fmt.Printf("[APP DEBUG] Navidrome client available, creating audio manager...\n")
@@ -83,14 +84,14 @@ func (a *App) updateAudioState(state *models.AppState) {
 	if a.audioManager != nil {
 		// Update queue from audio manager
 		a.state.Queue = a.audioManager.GetQueue()
-		
+
 		// Update current playing track
 		currentTrack := a.audioManager.GetCurrentTrack()
 		a.state.CurrentTrack = currentTrack
-		
+
 		// Update playing state
 		a.state.IsPlaying = a.audioManager.IsPlaying()
-		
+
 		// Update position if available
 		// TODO: Get position from audio manager if needed
 	}
@@ -151,8 +152,36 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.LoadingError = ""
 		}
 		return a, nil
+	case AlbumTracksLoadResult:
+		// Handle album tracks load result and add to queue
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			// Add all tracks to queue
+			if a.audioManager != nil {
+				a.audioManager.AddTracksToQueue(msg.Tracks)
+			} else {
+				a.state.Queue = append(a.state.Queue, msg.Tracks...)
+			}
+			a.state.LoadingError = ""
+		}
+		return a, nil
+	case ArtistTracksLoadResult:
+		// Handle artist tracks load result and add to queue
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			// Add all tracks to queue
+			if a.audioManager != nil {
+				a.audioManager.AddTracksToQueue(msg.Tracks)
+			} else {
+				a.state.Queue = append(a.state.Queue, msg.Tracks...)
+			}
+			a.state.LoadingError = ""
+		}
+		return a, nil
 	}
-	
+
 	return a, nil
 }
 
@@ -222,7 +251,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.state.IsPlaying = false
 		}
 	}
-	
+
 	return a, nil
 }
 
@@ -288,25 +317,26 @@ func (a *App) handleConfigEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "enter":
-		// Validate and convert numeric fields
-		if cf.ActiveField == models.VolumeField {
+		// Validate and convert numeric fields using tagged switch
+		switch cf.ActiveField {
+		case models.VolumeField:
 			if vol, err := strconv.Atoi(cf.CurrentInput); err == nil && vol >= 0 && vol <= 100 {
 				cf.Config.Audio.Volume = vol
 			} else {
 				cf.ValidationError = "Volume must be a number between 0 and 100"
 				return a, nil
 			}
-		} else if cf.ActiveField == models.BufferSizeField {
+		case models.BufferSizeField:
 			if size, err := strconv.Atoi(cf.CurrentInput); err == nil && size > 0 {
 				cf.Config.Audio.BufferSize = size
 			} else {
 				cf.ValidationError = "Buffer size must be a positive number"
 				return a, nil
 			}
-		} else {
+		default:
 			cf.SetFieldValue(cf.ActiveField, cf.CurrentInput)
 		}
-		
+
 		cf.EditMode = false
 		cf.CurrentInput = ""
 		cf.ValidationError = ""
@@ -331,14 +361,14 @@ func (a *App) moveConfigField(direction int) {
 	cf := a.state.ConfigForm
 	current := int(cf.ActiveField)
 	max := int(models.BufferSizeField)
-	
+
 	current += direction
 	if current < 0 {
 		current = max
 	} else if current > max {
 		current = 0
 	}
-	
+
 	cf.ActiveField = models.ConfigFormField(current)
 }
 
@@ -372,17 +402,17 @@ func (a *App) getEditableValue(field models.ConfigFormField) string {
 // saveConfig saves the current configuration
 func (a *App) saveConfig() (tea.Model, tea.Cmd) {
 	cf := a.state.ConfigForm
-	
+
 	if err := cf.Config.Validate(); err != nil {
 		cf.ValidationError = err.Error()
 		return a, nil
 	}
-	
+
 	if err := config.Save(cf.Config); err != nil {
 		cf.ValidationError = "Failed to save config: " + err.Error()
 		return a, nil
 	}
-	
+
 	cf.ValidationError = ""
 	cf.ConnectionStatus = "Configuration saved successfully!"
 	return a, nil
@@ -393,7 +423,7 @@ func (a *App) testConnection() (tea.Model, tea.Cmd) {
 	cf := a.state.ConfigForm
 	cf.TestingConnection = true
 	cf.ConnectionStatus = "Testing connection..."
-	
+
 	// Return a command to test the connection asynchronously
 	return a, tea.Cmd(func() tea.Msg {
 		return a.doConnectionTest()
@@ -409,7 +439,7 @@ type ConnectionTestResult struct {
 // doConnectionTest performs the actual connection test
 func (a *App) doConnectionTest() ConnectionTestResult {
 	cf := a.state.ConfigForm
-	
+
 	// Basic validation
 	if cf.Config.Navidrome.ServerURL == "" {
 		return ConnectionTestResult{
@@ -417,42 +447,42 @@ func (a *App) doConnectionTest() ConnectionTestResult {
 			Message: "❌ Server URL is required",
 		}
 	}
-	
+
 	if cf.Config.Navidrome.Username == "" {
 		return ConnectionTestResult{
 			Success: false,
 			Message: "❌ Username is required",
 		}
 	}
-	
+
 	if cf.Config.Navidrome.Password == "" {
 		return ConnectionTestResult{
 			Success: false,
 			Message: "❌ Password is required",
 		}
 	}
-	
+
 	// Create Navidrome client
 	client := navidrome.NewClient(
 		cf.Config.Navidrome.ServerURL,
 		cf.Config.Navidrome.Username,
 		cf.Config.Navidrome.Password,
 	)
-	
+
 	// Set timeout from config
 	client.SetTimeout(time.Duration(cf.Config.Navidrome.Timeout) * time.Second)
-	
+
 	// Test connection with ping
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	if err := client.Ping(ctx); err != nil {
 		return ConnectionTestResult{
 			Success: false,
 			Message: fmt.Sprintf("❌ Connection failed: %s", err.Error()),
 		}
 	}
-	
+
 	return ConnectionTestResult{
 		Success: true,
 		Message: "✅ Connection successful!",
@@ -462,16 +492,16 @@ func (a *App) doConnectionTest() ConnectionTestResult {
 // initializeNavidromeClient sets up the Navidrome client if config is valid
 func (a *App) initializeNavidromeClient() {
 	cfg := a.state.ConfigForm.Config
-	
-	fmt.Printf("[APP DEBUG] Checking Navidrome config: URL='%s', Username='%s', Password='%s'\n", 
-		cfg.Navidrome.ServerURL, cfg.Navidrome.Username, 
+
+	fmt.Printf("[APP DEBUG] Checking Navidrome config: URL='%s', Username='%s', Password='%s'\n",
+		cfg.Navidrome.ServerURL, cfg.Navidrome.Username,
 		func() string {
 			if cfg.Navidrome.Password != "" {
 				return "[SET]"
 			}
 			return "[EMPTY]"
 		}())
-	
+
 	if cfg.Navidrome.ServerURL != "" && cfg.Navidrome.Username != "" && cfg.Navidrome.Password != "" {
 		fmt.Printf("[APP DEBUG] Creating Navidrome client with valid config\n")
 		a.navidromeClient = navidrome.NewClient(
@@ -535,7 +565,7 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Refresh albums
 		return a, a.loadAlbums()
 	}
-	
+
 	return a, nil
 }
 
@@ -659,23 +689,49 @@ func (a *App) loadTracks() tea.Cmd {
 
 // addAlbumToQueue adds all tracks from an album to the queue
 func (a *App) addAlbumToQueue(album models.Album) tea.Cmd {
-	// For now, just add a placeholder track representing the album
-	// In a full implementation, we'd fetch the album's tracks first
-	track := models.Track{
-		ID:       album.ID + "-placeholder",
-		Title:    album.Name + " (Album)",
-		Artist:   album.Artist,
-		Album:    album.Name,
-		Duration: album.Duration,
-	}
-	
-	if a.audioManager != nil {
-		a.audioManager.AddToQueue(track)
-	} else {
-		a.state.Queue = append(a.state.Queue, track)
-	}
-	
-	return nil
+	return tea.Batch(
+		func() tea.Msg {
+			if a.navidromeClient == nil {
+				return AlbumTracksLoadResult{Error: fmt.Errorf("navidrome client not initialized")}
+			}
+
+			// Fetch actual tracks from the album
+			resp, err := a.navidromeClient.GetAlbumTracks(context.Background(), album.ID)
+			if err != nil {
+				return AlbumTracksLoadResult{Error: err}
+			}
+
+			// Convert Navidrome songs to our model
+			tracks := make([]models.Track, len(resp.SubsonicResponse.SongsByGenre.Song))
+			for i, song := range resp.SubsonicResponse.SongsByGenre.Song {
+				tracks[i] = models.Track{
+					ID:       song.ID,
+					Title:    song.Title,
+					Artist:   song.Artist,
+					ArtistID: song.ArtistID,
+					Album:    song.Album,
+					AlbumID:  song.AlbumID,
+					Genre:    song.Genre,
+					Year:     song.Year,
+					Duration: song.Duration,
+					Track:    song.Track,
+					Disc:     song.DiscNumber,
+					Size:     song.Size,
+					Suffix:   song.Suffix,
+					BitRate:  song.BitRate,
+					Path:     song.Path,
+				}
+			}
+
+			return AlbumTracksLoadResult{Tracks: tracks}
+		},
+	)
+}
+
+// AlbumTracksLoadResult represents the result of loading album tracks
+type AlbumTracksLoadResult struct {
+	Tracks []models.Track
+	Error  error
 }
 
 // handleArtistsKeyPress handles keyboard input for the artists tab
@@ -708,29 +764,55 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Refresh artists
 		return a, a.loadArtists()
 	}
-	
+
 	return a, nil
 }
 
-// addArtistToQueue adds all albums from an artist to the queue
+// addArtistToQueue adds all tracks from an artist to the queue
 func (a *App) addArtistToQueue(artist models.Artist) tea.Cmd {
-	// For now, just add a placeholder track representing the artist
-	// In a full implementation, we'd fetch the artist's albums/tracks first
-	track := models.Track{
-		ID:       artist.ID + "-placeholder",
-		Title:    artist.Name + " (Artist)",
-		Artist:   artist.Name,
-		Album:    "Various Albums",
-		Duration: 0, // Unknown duration
-	}
-	
-	if a.audioManager != nil {
-		a.audioManager.AddToQueue(track)
-	} else {
-		a.state.Queue = append(a.state.Queue, track)
-	}
-	
-	return nil
+	return tea.Batch(
+		func() tea.Msg {
+			if a.navidromeClient == nil {
+				return ArtistTracksLoadResult{Error: fmt.Errorf("navidrome client not initialized")}
+			}
+
+			// Fetch actual tracks from the artist
+			resp, err := a.navidromeClient.GetArtistTracks(context.Background(), artist.ID)
+			if err != nil {
+				return ArtistTracksLoadResult{Error: err}
+			}
+
+			// Convert Navidrome songs to our model
+			tracks := make([]models.Track, len(resp.SubsonicResponse.SongsByGenre.Song))
+			for i, song := range resp.SubsonicResponse.SongsByGenre.Song {
+				tracks[i] = models.Track{
+					ID:       song.ID,
+					Title:    song.Title,
+					Artist:   song.Artist,
+					ArtistID: song.ArtistID,
+					Album:    song.Album,
+					AlbumID:  song.AlbumID,
+					Genre:    song.Genre,
+					Year:     song.Year,
+					Duration: song.Duration,
+					Track:    song.Track,
+					Disc:     song.DiscNumber,
+					Size:     song.Size,
+					Suffix:   song.Suffix,
+					BitRate:  song.BitRate,
+					Path:     song.Path,
+				}
+			}
+
+			return ArtistTracksLoadResult{Tracks: tracks}
+		},
+	)
+}
+
+// ArtistTracksLoadResult represents the result of loading artist tracks
+type ArtistTracksLoadResult struct {
+	Tracks []models.Track
+	Error  error
 }
 
 // handleTracksKeyPress handles keyboard input for the tracks tab
@@ -763,7 +845,7 @@ func (a *App) handleTracksKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Refresh tracks
 		return a, a.loadTracks()
 	}
-	
+
 	return a, nil
 }
 
@@ -815,7 +897,7 @@ func (a *App) handleQueueKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Play selected track or toggle play/pause
 		fmt.Printf("[UI DEBUG] Enter/Space pressed in queue tab, audioManager: %v\n", a.audioManager != nil)
 		fmt.Printf("[UI DEBUG] Selected queue index: %d, queue length: %d\n", a.state.SelectedQueueIndex, len(a.state.Queue))
-		
+
 		if a.audioManager != nil {
 			if a.state.SelectedQueueIndex < len(a.state.Queue) {
 				fmt.Printf("[UI DEBUG] Calling PlayTrackAtIndex with index %d\n", a.state.SelectedQueueIndex)
@@ -841,29 +923,8 @@ func (a *App) handleQueueKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	
-	return a, nil
-}
 
-// removeFromQueue removes a track from the queue at the specified index
-func (a *App) removeFromQueue(index int) {
-	if index < 0 || index >= len(a.state.Queue) {
-		return
-	}
-	
-	if a.audioManager != nil {
-		a.audioManager.RemoveFromQueue(index)
-	} else {
-		// Remove the track at index
-		a.state.Queue = append(a.state.Queue[:index], a.state.Queue[index+1:]...)
-	}
-	
-	// Adjust selection if needed
-	if a.state.SelectedQueueIndex >= len(a.state.Queue) && len(a.state.Queue) > 0 {
-		a.state.SelectedQueueIndex = len(a.state.Queue) - 1
-	} else if len(a.state.Queue) == 0 {
-		a.state.SelectedQueueIndex = 0
-	}
+	return a, nil
 }
 
 // Message types for async operations
@@ -883,7 +944,7 @@ type TracksLoadResult struct {
 }
 
 // handleMouseEvent processes mouse input
-func (a *App) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (a *App) handleMouseEvent(_ tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Mouse support placeholder for Phase 2
 	return a, nil
 }

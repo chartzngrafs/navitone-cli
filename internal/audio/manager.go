@@ -15,19 +15,18 @@ type Manager struct {
 	player          *Player
 	navidromeClient *navidrome.Client
 	scrobbler       *scrobbling.Manager
-	
+
 	// State
-	queue           []models.Track
-	currentIndex    int
-	isPlaying       bool
-	isShuffled      bool
-	repeatMode      RepeatMode
-	
+	queue        []models.Track
+	currentIndex int
+	isPlaying    bool
+	repeatMode   RepeatMode
+
 	// Callbacks
-	stateCallback   func(*models.AppState)
-	
+	stateCallback func(*models.AppState)
+
 	// Synchronization
-	mu              sync.RWMutex
+	mu sync.RWMutex
 }
 
 // RepeatMode represents different repeat modes
@@ -72,7 +71,7 @@ func (m *Manager) SetStateCallback(callback func(*models.AppState)) {
 func (m *Manager) AddToQueue(track models.Track) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.queue = append(m.queue, track)
 	log.Printf("Added track to queue: %s - %s", track.Artist, track.Title)
 	m.notifyStateChange()
@@ -82,7 +81,7 @@ func (m *Manager) AddToQueue(track models.Track) {
 func (m *Manager) AddTracksToQueue(tracks []models.Track) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.queue = append(m.queue, tracks...)
 	log.Printf("Added %d tracks to queue", len(tracks))
 	m.notifyStateChange()
@@ -92,11 +91,11 @@ func (m *Manager) AddTracksToQueue(tracks []models.Track) {
 func (m *Manager) RemoveFromQueue(index int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if index < 0 || index >= len(m.queue) {
 		return
 	}
-	
+
 	// Adjust current index if necessary
 	if index < m.currentIndex {
 		m.currentIndex--
@@ -105,7 +104,7 @@ func (m *Manager) RemoveFromQueue(index int) {
 		m.player.Stop()
 		m.isPlaying = false
 	}
-	
+
 	m.queue = append(m.queue[:index], m.queue[index+1:]...)
 	log.Printf("Removed track from queue at index %d", index)
 	m.notifyStateChange()
@@ -115,7 +114,7 @@ func (m *Manager) RemoveFromQueue(index int) {
 func (m *Manager) ClearQueue() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.player.Stop()
 	m.queue = make([]models.Track, 0)
 	m.currentIndex = -1
@@ -128,14 +127,14 @@ func (m *Manager) ClearQueue() {
 func (m *Manager) PlayTrackAtIndex(index int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	fmt.Printf("[AUDIO DEBUG] PlayTrackAtIndex called with index: %d, queue length: %d\n", index, len(m.queue))
-	
+
 	if index < 0 || index >= len(m.queue) {
 		fmt.Printf("[AUDIO DEBUG] Invalid queue index: %d\n", index)
 		return fmt.Errorf("invalid queue index: %d", index)
 	}
-	
+
 	return m.playTrackAtIndexLocked(index)
 }
 
@@ -143,15 +142,15 @@ func (m *Manager) PlayTrackAtIndex(index int) error {
 func (m *Manager) PlayCurrent() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if len(m.queue) == 0 {
 		return fmt.Errorf("queue is empty")
 	}
-	
+
 	if m.currentIndex < 0 {
 		m.currentIndex = 0
 	}
-	
+
 	return m.playTrackAtIndexLocked(m.currentIndex)
 }
 
@@ -159,7 +158,7 @@ func (m *Manager) PlayCurrent() error {
 func (m *Manager) Pause() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if m.isPlaying {
 		m.player.Pause()
 		m.isPlaying = false
@@ -172,7 +171,7 @@ func (m *Manager) Pause() {
 func (m *Manager) Resume() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if !m.isPlaying && m.player.GetState() == StatePaused {
 		m.player.Resume()
 		m.isPlaying = true
@@ -185,7 +184,7 @@ func (m *Manager) Resume() {
 func (m *Manager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.player.Stop()
 	m.isPlaying = false
 	log.Println("Stopped playback")
@@ -196,16 +195,16 @@ func (m *Manager) Stop() {
 func (m *Manager) NextTrack() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if len(m.queue) == 0 {
 		return fmt.Errorf("queue is empty")
 	}
-	
+
 	nextIndex := m.getNextTrackIndex()
 	if nextIndex >= 0 {
 		return m.playTrackAtIndexLocked(nextIndex)
 	}
-	
+
 	// End of queue
 	m.player.Stop()
 	m.isPlaying = false
@@ -218,16 +217,16 @@ func (m *Manager) NextTrack() error {
 func (m *Manager) PreviousTrack() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if len(m.queue) == 0 {
 		return fmt.Errorf("queue is empty")
 	}
-	
+
 	prevIndex := m.getPreviousTrackIndex()
 	if prevIndex >= 0 {
 		return m.playTrackAtIndexLocked(prevIndex)
 	}
-	
+
 	return nil
 }
 
@@ -236,7 +235,7 @@ func (m *Manager) TogglePlayPause() error {
 	m.mu.RLock()
 	playing := m.isPlaying
 	m.mu.RUnlock()
-	
+
 	if playing {
 		m.Pause()
 	} else {
@@ -246,7 +245,7 @@ func (m *Manager) TogglePlayPause() error {
 			return m.PlayCurrent()
 		}
 	}
-	
+
 	return nil
 }
 
@@ -254,7 +253,7 @@ func (m *Manager) TogglePlayPause() error {
 func (m *Manager) GetQueue() []models.Track {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	queue := make([]models.Track, len(m.queue))
 	copy(queue, m.queue)
 	return queue
@@ -264,12 +263,12 @@ func (m *Manager) GetQueue() []models.Track {
 func (m *Manager) GetCurrentTrack() *models.Track {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if m.currentIndex >= 0 && m.currentIndex < len(m.queue) {
 		track := m.queue[m.currentIndex]
 		return &track
 	}
-	
+
 	return nil
 }
 
@@ -304,28 +303,28 @@ func (m *Manager) playTrackAtIndexLocked(index int) error {
 	if index < 0 || index >= len(m.queue) {
 		return fmt.Errorf("invalid queue index: %d", index)
 	}
-	
+
 	track := m.queue[index]
 	streamURL := m.navidromeClient.GetStreamURL(track.ID)
-	
+
 	fmt.Printf("[AUDIO DEBUG] Playing track: %s - %s (ID: %s)\n", track.Artist, track.Title, track.ID)
 	fmt.Printf("[AUDIO DEBUG] Track suffix/format: %s\n", track.Suffix)
 	fmt.Printf("[AUDIO DEBUG] Stream URL: %s\n", streamURL)
-	
+
 	// Pass the track format hint to the player
 	err := m.player.PlayWithFormat(streamURL, track.ID, track.Suffix)
 	if err != nil {
 		fmt.Printf("[AUDIO DEBUG] Failed to play track: %v\n", err)
 		return fmt.Errorf("failed to play track: %w", err)
 	}
-	
+
 	m.currentIndex = index
 	m.isPlaying = true
-	
+
 	fmt.Printf("[AUDIO DEBUG] Successfully started playback, currentIndex: %d, isPlaying: %v\n", m.currentIndex, m.isPlaying)
 	log.Printf("Playing track: %s - %s", track.Artist, track.Title)
 	m.notifyStateChange()
-	
+
 	// Submit "Now Playing" to scrobbling services
 	if m.scrobbler != nil {
 		scrobbleTrack := scrobbling.ScrobbleTrack{
@@ -336,7 +335,7 @@ func (m *Manager) playTrackAtIndexLocked(index int) error {
 		}
 		go m.scrobbler.UpdateNowPlaying(scrobbleTrack)
 	}
-	
+
 	return nil
 }
 
@@ -383,26 +382,26 @@ func (m *Manager) handlePlayerEvent(event PlaybackEvent) {
 		// Track finished, play next track
 		go func() {
 			time.Sleep(100 * time.Millisecond) // Small delay to avoid race conditions
-			
+
 			// Scrobble the finished track
 			if m.scrobbler != nil {
 				track := m.GetCurrentTrack()
 				if track != nil {
 					scrobbleTrack := scrobbling.ScrobbleTrack{
-						Title:    track.Title,
-						Artist:   track.Artist,
-						Album:    track.Album,
-						Duration: track.Duration,
+						Title:     track.Title,
+						Artist:    track.Artist,
+						Album:     track.Album,
+						Duration:  track.Duration,
 						Timestamp: time.Now().Unix(),
 					}
 					m.scrobbler.Scrobble(scrobbleTrack)
 				}
 			}
-			
+
 			// Play next track
 			m.NextTrack()
 		}()
-		
+
 	case "error":
 		log.Printf("Playback error for track: %s", event.TrackID)
 		// Try next track on error

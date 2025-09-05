@@ -30,41 +30,44 @@ type PlaybackEvent struct {
 
 // Player represents the audio player
 type Player struct {
-	context      *oto.Context
-	player       *oto.Player
-	httpClient   *http.Client
-	
+	context    *oto.Context
+	player     *oto.Player
+	httpClient *http.Client
+
 	// State
-	state        PlaybackState
-	currentURL   string
-	currentID    string
-	formatHint   string
-	volume       float64
-	position     time.Duration
-	duration     time.Duration
-	
+	state      PlaybackState
+	currentURL string
+	currentID  string
+	formatHint string
+	volume     float64
+	position   time.Duration
+	duration   time.Duration
+
 	// Control channels
-	stopCh       chan struct{}
-	pauseCh      chan struct{}
-	resumeCh     chan struct{}
-	
+	stopCh   chan struct{}
+	pauseCh  chan struct{}
+	resumeCh chan struct{}
+
 	// Event callback
 	eventCallback func(PlaybackEvent)
-	
+
 	// Synchronization
-	mu           sync.RWMutex
-	wg           sync.WaitGroup
+	mu sync.RWMutex
+	wg sync.WaitGroup
 }
 
 // NewPlayer creates a new audio player
 func NewPlayer() (*Player, error) {
 	// Initialize Oto context with reasonable defaults
-	// 44.1kHz, 16-bit, stereo
+	// Let's try different settings to match common audio formats
 	op := &oto.NewContextOptions{
 		SampleRate:   44100,
 		ChannelCount: 2,
 		Format:       oto.FormatSignedInt16LE,
 	}
+
+	fmt.Printf("[AUDIO DEBUG] Creating Oto context with: SampleRate=%d, Channels=%d, Format=%v\n",
+		op.SampleRate, op.ChannelCount, op.Format)
 
 	ctx, readyChan, err := oto.NewContext(op)
 	if err != nil {
@@ -73,6 +76,7 @@ func NewPlayer() (*Player, error) {
 
 	// Wait for the context to be ready
 	<-readyChan
+	fmt.Printf("[AUDIO DEBUG] Oto context ready\n")
 
 	player := &Player{
 		context:    ctx,
@@ -108,18 +112,18 @@ func (p *Player) PlayWithFormat(streamURL, trackID, formatHint string) error {
 	p.currentURL = streamURL
 	p.currentID = trackID
 	p.position = 0
-	
+
 	// Store format hint for playback loop
 	p.formatHint = formatHint
-	
+
 	// Start new playback
 	fmt.Printf("[AUDIO DEBUG] Starting playback loop\n")
 	p.wg.Add(1)
 	go p.playbackLoop()
-	
+
 	p.state = StatePlaying
 	p.emitEvent("play_started", trackID, 0, 0)
-	
+
 	fmt.Printf("[AUDIO DEBUG] Play method completed, state: %d\n", p.state)
 	return nil
 }
@@ -128,7 +132,7 @@ func (p *Player) PlayWithFormat(streamURL, trackID, formatHint string) error {
 func (p *Player) Pause() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if p.state == StatePlaying {
 		p.state = StatePaused
 		select {
@@ -143,7 +147,7 @@ func (p *Player) Pause() {
 func (p *Player) Resume() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if p.state == StatePaused {
 		p.state = StatePlaying
 		select {
@@ -158,7 +162,7 @@ func (p *Player) Resume() {
 func (p *Player) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if p.state == StatePlaying || p.state == StatePaused {
 		p.stopPlayback()
 		p.state = StateStopped
@@ -170,14 +174,14 @@ func (p *Player) Stop() {
 func (p *Player) SetVolume(volume float64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if volume < 0 {
 		volume = 0
 	}
 	if volume > 1 {
 		volume = 1
 	}
-	
+
 	p.volume = volume
 	// TODO: Apply volume to current player if playing
 }
@@ -221,7 +225,7 @@ func (p *Player) SetEventCallback(callback func(PlaybackEvent)) {
 func (p *Player) Close() error {
 	p.Stop()
 	p.wg.Wait()
-	
+
 	if p.context != nil {
 		p.context.Suspend()
 	}
@@ -234,7 +238,7 @@ func (p *Player) stopPlayback() {
 		p.player.Close()
 		p.player = nil
 	}
-	
+
 	select {
 	case p.stopCh <- struct{}{}:
 	default:
@@ -258,9 +262,9 @@ func (p *Player) emitEvent(eventType, trackID string, position, duration time.Du
 // playbackLoop handles the actual audio playback
 func (p *Player) playbackLoop() {
 	defer p.wg.Done()
-	
+
 	fmt.Printf("[AUDIO DEBUG] Playback loop started for URL: %s\n", p.currentURL)
-	
+
 	// Create HTTP request for the stream
 	req, err := http.NewRequest("GET", p.currentURL, nil)
 	if err != nil {
@@ -290,38 +294,46 @@ func (p *Player) playbackLoop() {
 	// Detect audio format from URL, content-type, or format hint
 	format := p.detectAudioFormat(p.currentURL, resp.Header.Get("Content-Type"))
 	fmt.Printf("[AUDIO DEBUG] Detected format: %s, Content-Type: %s, Format hint: %s\n", format, resp.Header.Get("Content-Type"), p.formatHint)
-	
-	// Decode the audio stream
+
+	// Use appropriate decoder based on format
 	var audioReader io.Reader
 	if format != "" {
 		decoder, err := NewDecoder(format)
 		if err != nil {
-			fmt.Printf("[AUDIO DEBUG] Failed to create decoder for %s: %v, using raw stream\n", format, err)
-			audioReader = resp.Body
-		} else {
-			decodedReader, err := decoder.Decode(resp.Body)
-			if err != nil {
-				fmt.Printf("[AUDIO DEBUG] Failed to decode %s: %v, using raw stream\n", format, err)
-				audioReader = resp.Body
-			} else {
-				fmt.Printf("[AUDIO DEBUG] Successfully decoded %s stream\n", format)
-				audioReader = decodedReader
-			}
+			fmt.Printf("[AUDIO DEBUG] Failed to create decoder for %s: %v\n", format, err)
+			p.emitEvent("error", p.currentID, 0, 0)
+			return
 		}
+
+		decodedReader, err := decoder.Decode(resp.Body)
+		if err != nil {
+			fmt.Printf("[AUDIO DEBUG] Failed to decode %s: %v\n", format, err)
+			p.emitEvent("error", p.currentID, 0, 0)
+			return
+		}
+
+		fmt.Printf("[AUDIO DEBUG] Successfully created %s decoder\n", format)
+		fmt.Printf("[AUDIO DEBUG] Decoder sample rate: %d\n", decoder.SampleRate())
+		fmt.Printf("[AUDIO DEBUG] Decoder channels: %d\n", decoder.Channels())
+
+		audioReader = decodedReader
 	} else {
-		fmt.Printf("[AUDIO DEBUG] Unknown format, using raw stream\n")
-		audioReader = resp.Body
+		fmt.Printf("[AUDIO DEBUG] Unknown format, cannot decode\n")
+		p.emitEvent("error", p.currentID, 0, 0)
+		return
 	}
 
 	// Create a new Oto player for this stream
 	p.mu.Lock()
+	fmt.Printf("[AUDIO DEBUG] Creating Oto player from audioReader\n")
 	p.player = p.context.NewPlayer(audioReader)
+	fmt.Printf("[AUDIO DEBUG] Oto player created successfully\n")
 	p.mu.Unlock()
 
-	fmt.Printf("[AUDIO DEBUG] Created Oto player, starting playback\n")
+	fmt.Printf("[AUDIO DEBUG] Starting playback\n")
 	// Start playback
 	p.player.Play()
-	fmt.Printf("[AUDIO DEBUG] Called player.Play()\n")
+	fmt.Printf("[AUDIO DEBUG] Called player.Play() - audio should be playing now\n")
 
 	// Position tracking loop
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -334,11 +346,11 @@ func (p *Player) playbackLoop() {
 		select {
 		case <-p.stopCh:
 			return
-			
+
 		case <-p.pauseCh:
 			p.player.Pause()
 			pauseStart := time.Now()
-			
+
 			// Wait for resume or stop
 			select {
 			case <-p.resumeCh:
@@ -347,16 +359,16 @@ func (p *Player) playbackLoop() {
 			case <-p.stopCh:
 				return
 			}
-			
+
 		case <-ticker.C:
 			if p.GetState() == StatePlaying {
 				p.mu.Lock()
 				p.position = time.Since(startTime) - pausedDuration
 				p.mu.Unlock()
-				
+
 				p.emitEvent("position_update", p.currentID, p.position, p.duration)
 			}
-			
+
 		default:
 			// Check if playbook finished
 			if p.player != nil && !p.player.IsPlaying() {
@@ -386,7 +398,7 @@ func (p *Player) detectAudioFormat(url, contentType string) string {
 			return "mp3" // Fallback to MP3 decoder for now
 		}
 	}
-	
+
 	// Second priority: Try to detect from URL extension
 	url = strings.ToLower(url)
 	if strings.Contains(url, ".mp3") || strings.Contains(url, "format=mp3") {
@@ -401,7 +413,7 @@ func (p *Player) detectAudioFormat(url, contentType string) string {
 	if strings.Contains(url, ".wav") || strings.Contains(url, "format=wav") {
 		return "wav"
 	}
-	
+
 	// Third priority: Try to detect from content-type
 	contentType = strings.ToLower(contentType)
 	if strings.Contains(contentType, "audio/mpeg") || strings.Contains(contentType, "audio/mp3") {
@@ -416,7 +428,7 @@ func (p *Player) detectAudioFormat(url, contentType string) string {
 	if strings.Contains(contentType, "audio/wav") || strings.Contains(contentType, "audio/wave") {
 		return "wav"
 	}
-	
+
 	// Last resort: Default to MP3
 	return "mp3"
 }

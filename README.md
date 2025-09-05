@@ -12,8 +12,8 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Navidrome Integration** - Full API support for streaming and library management
 - **Comprehensive Scrobbling** - Last.fm and ListenBrainz support with offline queuing
 - **Smart Navigation** - Context-aware help system and logical keybindings
-- **Audio Excellence** - Pipewire support with multiple format handling (FLAC, MP3, OGG, WAV)
-- **Mouse Support** - Full mouse interaction (Phase 2)
+- **Audio Excellence** - Multi-format audio playback (FLAC, MP3, OGG, WAV) with Oto audio library
+- **Queue Management** - Full queue controls: add, remove, clear, reorder, play/pause
 
 ## 🚀 Current Status
 
@@ -22,22 +22,23 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Tab Navigation** - 7 tabs: Home, Albums, Artists, Tracks, Playlists, Queue, Config
 - **Interactive Configuration** - Full form-based config with field validation
 - **Navidrome API Client** - Complete Subsonic API integration with authentication
-- **Scrobbling System** - Full Last.fm and ListenBrainz support with retry queuing
+- **Audio Playback System** ✅ - Multi-format audio streaming (FLAC, MP3, OGG, WAV)
+- **Audio Decoders** ✅ - Custom PCM conversion pipeline for all supported formats
+- **Queue Management** ✅ - Complete queue controls: add, remove, clear, play/pause/next/prev
+- **Scrobbling System** ✅ - Full Last.fm and ListenBrainz support with Now Playing updates
 - **Albums Tab** - Live data browsing with navigation, selection, and queue integration
 - **Artists Tab** - Live artist browsing with album counts and starred indicators
 - **Tracks Tab** - Live track browsing with formatted display and queue integration
-- **Basic Queue Management** - Add/remove tracks, clear queue, visual management
 - **UI Framework** - Bubble Tea with Lipgloss styling and visual feedback
 - **Help System** - Context-aware overlay with F1/? toggle
 - **Connection Testing** - Async Navidrome server validation
 - **Loading States** - Async data loading with error handling and retry
 
 ### 🏗️ In Development
-- **Audio Playback System** - Pipewire integration with format support (FLAC, MP3, OGG, WAV)
 - **Playlists Tab** - User playlist management and creation
 - **Home Tab** - Proper curated sections (Recently Added/Played, Most Played, Random Albums)
 - **Sorting Options** - Sort controls for Albums, Artists, Tracks tabs
-- **Actual Playback Controls** - Real play/pause/next/previous functionality
+- **Advanced Queue Features** - Reorder tracks, shuffle mode, repeat modes
 
 ### 📋 Planned (Phase 2)
 - Enhanced mouse support
@@ -106,9 +107,11 @@ navitone-cli/
 - Add tracks from Albums, Artists, Tracks tabs
 - X/Del to remove individual tracks
 - C to clear entire queue
-- Enter/Space to simulate play (no actual audio playback)
-- Shows current "playing" track with ▶/⏸ indicators
-- Reorder tracks (Not Implemented)
+- **✅ Full Playback Controls** - Enter/Space to play, Ctrl+N/P for next/previous
+- **✅ Real Audio Playback** - Streaming audio from Navidrome with format support
+- Shows current playing track with ▶/⏸ indicators
+- Volume control with +/- keys
+- Reorder tracks (Planned)
 
 ### ⚙️ Config
 - **Navidrome Settings** - Server URL, credentials with connection testing
@@ -116,11 +119,34 @@ navitone-cli/
 - **Audio Settings** - Volume, device selection, buffer size
 - **Interactive Forms** - Navigate with ↑↓, edit with Enter, save with F2
 
+## 🎵 Audio System
+
+### Supported Formats ✅
+- **FLAC** - Lossless compression with proper int32→int16 PCM conversion
+- **MP3** - Native decoder with optimized performance  
+- **OGG Vorbis** - Custom decoder with float32→int16 conversion and clamping
+- **WAV** - Basic WAV file support
+
+### Audio Pipeline ✅
+- **Streaming** - Direct HTTP streaming from Navidrome server
+- **Format Detection** - Automatic format detection from URLs and metadata
+- **PCM Conversion** - All formats standardized to 16-bit signed little endian stereo
+- **Audio Backend** - Oto library handles cross-platform audio (Pulse/ALSA/Pipewire)
+- **Real-time Playback** - Proper buffering and position tracking
+
+### Playback Features ✅
+- **Queue Management** - Add/remove tracks, clear queue, visual navigation
+- **Playback Controls** - Play, pause, resume, stop, next, previous
+- **Volume Control** - Adjustable volume levels (0-100%)
+- **State Tracking** - Real-time playback position and duration
+- **Event System** - Proper callbacks for UI updates and scrobbling
+- **Error Handling** - Graceful fallbacks and error recovery
+
 ## 🔧 Requirements
 
 - **Go 1.21+**
 - **Linux** (primary target platform)
-- **Pipewire** (recommended) or PulseAudio
+- **Audio System** (Pulse/ALSA/Pipewire) - Oto handles audio backend automatically
 - **Navidrome Server** (for music streaming)
 
 ## 📦 Installation
@@ -167,13 +193,15 @@ The application will automatically download required Go dependencies:
    - Enter to add individual tracks to queue
 4. Navigate to **Queue** tab - manage your playback queue
    - X/Del to remove tracks, C to clear all
-   - Enter/Space to simulate play (no actual audio)
+   - **✅ Enter/Space to play tracks with real audio**
+   - **✅ Ctrl+N/P for next/previous, +/- for volume**
 
-### Playback Controls (Coming Soon)
-- **Space** - Play/Pause
+### Playback Controls ✅ WORKING
+- **Space** - Play/Pause current track
 - **Ctrl+N** - Next track
 - **Ctrl+P** - Previous track
 - **+/-** - Volume control
+- **Multi-format Support** - FLAC, MP3, OGG, WAV streaming
 
 ## ⚙️ Configuration
 
@@ -244,12 +272,13 @@ go build -o bin/navitone ./cmd/navitone
 - [x] Albums tab with live data browsing and queue integration
 - [x] Artists tab with live data browsing and selection
 - [x] Tracks tab with live data browsing and queue integration
-- [x] Basic queue management (add/remove/clear, visual display)
-- [ ] **Audio playback system with Pipewire** (Critical Missing)
+- [x] **Audio playback system with multi-format support** ✅ (COMPLETE)
+- [x] **Queue management with playback controls** ✅ (COMPLETE)
+- [x] **Audio encoding/decoding pipeline** ✅ (COMPLETE)
 - [ ] **Playlists tab with playlist management** (Not Started)
 - [ ] **Home tab with proper curated sections** (Partially Done)
 - [ ] **Sorting options for browse tabs** (Not Implemented)
-- [ ] **Actual playback controls** (Simulated Only)
+- [ ] **Advanced queue features** (Reorder, shuffle, repeat modes)
 
 ### Phase 2 (Enhancements)
 - [ ] Advanced mouse support
@@ -284,4 +313,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Note**: This project is in active development. Many features are planned but not yet implemented. See the Current Status section above for what's currently working.
+**Note**: This project is in active development with **core audio functionality now complete**! The audio playback system, multi-format encoding/decoding, and queue management are fully working. See the Current Status section above for what's currently working.
+
+**Latest Update**: ✅ Audio system is complete with FLAC, MP3, OGG, and WAV support, plus full queue management and playback controls.
