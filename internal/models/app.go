@@ -118,4 +118,27 @@ type AppState struct {
 	SelectedArtistIndex int
 	SelectedTrackIndex int
 	SelectedQueueIndex int
+	
+	// Modal state
+	ShowAlbumModal      bool
+	ShowArtistModal     bool
+	SelectedAlbum       *Album
+	SelectedArtist      *Artist
+	AlbumTracks         []Track
+	ArtistAlbums        []Album
+	SelectedModalIndex  int
+	LoadingModalContent bool
+	
+	// Log state (for contained event logging)
+	LogMessages []string
+}
+
+// AddLogMessage adds a log message to the log buffer, keeping only the latest 2 messages
+func (a *AppState) AddLogMessage(message string) {
+	a.LogMessages = append(a.LogMessages, message)
+	
+	// Keep only the latest 2 messages
+	if len(a.LogMessages) > 2 {
+		a.LogMessages = a.LogMessages[len(a.LogMessages)-2:]
+	}
 }

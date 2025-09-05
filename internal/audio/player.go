@@ -11,6 +11,17 @@ import (
 	"github.com/ebitengine/oto/v3"
 )
 
+// StreamTracker wraps an io.Reader to track when the HTTP stream ends
+type StreamTracker struct {
+	reader io.Reader
+	id     string
+}
+
+func (st *StreamTracker) Read(p []byte) (n int, err error) {
+	n, err = st.reader.Read(p)
+	return n, err
+}
+
 // PlaybackState represents the current state of playback
 type PlaybackState int
 
@@ -51,6 +62,7 @@ type Player struct {
 	// Event callback
 	eventCallback func(PlaybackEvent)
 
+
 	// Synchronization
 	mu sync.RWMutex
 	wg sync.WaitGroup
@@ -59,15 +71,15 @@ type Player struct {
 // NewPlayer creates a new audio player
 func NewPlayer() (*Player, error) {
 	// Initialize Oto context with reasonable defaults
-	// Let's try different settings to match common audio formats
+	// Use conservative settings to minimize audio issues
 	op := &oto.NewContextOptions{
 		SampleRate:   44100,
 		ChannelCount: 2,
 		Format:       oto.FormatSignedInt16LE,
+		// Add buffer size configuration to prevent underruns
+		BufferSize: time.Millisecond * 100, // 100ms buffer
 	}
 
-	fmt.Printf("[AUDIO DEBUG] Creating Oto context with: SampleRate=%d, Channels=%d, Format=%v\n",
-		op.SampleRate, op.ChannelCount, op.Format)
 
 	ctx, readyChan, err := oto.NewContext(op)
 	if err != nil {
@@ -76,11 +88,12 @@ func NewPlayer() (*Player, error) {
 
 	// Wait for the context to be ready
 	<-readyChan
-	fmt.Printf("[AUDIO DEBUG] Oto context ready\n")
 
 	player := &Player{
 		context:    ctx,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
 		state:      StateStopped,
 		volume:     0.7, // Default volume 70%
 		stopCh:     make(chan struct{}),
@@ -98,33 +111,35 @@ func (p *Player) Play(streamURL, trackID string) error {
 
 // PlayWithFormat starts playing a track with a format hint
 func (p *Player) PlayWithFormat(streamURL, trackID, formatHint string) error {
+	return p.PlayWithFormatAndDuration(streamURL, trackID, formatHint, 0)
+}
+
+// PlayWithFormatAndDuration starts playing a track with format hint and duration
+func (p *Player) PlayWithFormatAndDuration(streamURL, trackID, formatHint string, duration time.Duration) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	fmt.Printf("[AUDIO DEBUG] PlayWithFormat called with URL: %s, trackID: %s, format: %s\n", streamURL, trackID, formatHint)
 
 	// Stop current playback if any
 	if p.state == StatePlaying || p.state == StatePaused {
-		fmt.Printf("[AUDIO DEBUG] Stopping current playback\n")
 		p.stopPlayback()
 	}
 
 	p.currentURL = streamURL
 	p.currentID = trackID
 	p.position = 0
+	p.duration = duration
 
 	// Store format hint for playback loop
 	p.formatHint = formatHint
 
 	// Start new playback
-	fmt.Printf("[AUDIO DEBUG] Starting playback loop\n")
 	p.wg.Add(1)
 	go p.playbackLoop()
 
 	p.state = StatePlaying
 	p.emitEvent("play_started", trackID, 0, 0)
 
-	fmt.Printf("[AUDIO DEBUG] Play method completed, state: %d\n", p.state)
 	return nil
 }
 
@@ -263,12 +278,10 @@ func (p *Player) emitEvent(eventType, trackID string, position, duration time.Du
 func (p *Player) playbackLoop() {
 	defer p.wg.Done()
 
-	fmt.Printf("[AUDIO DEBUG] Playback loop started for URL: %s\n", p.currentURL)
 
-	// Create HTTP request for the stream
+	// Create HTTP request for the stream with no timeout for streaming
 	req, err := http.NewRequest("GET", p.currentURL, nil)
 	if err != nil {
-		fmt.Printf("[AUDIO DEBUG] Failed to create HTTP request: %v\n", err)
 		p.emitEvent("error", p.currentID, 0, 0)
 		return
 	}
@@ -276,64 +289,97 @@ func (p *Player) playbackLoop() {
 	// Add range header to support seeking (if needed in the future)
 	req.Header.Set("User-Agent", "navitone-cli/1.0")
 
-	resp, err := p.httpClient.Do(req)
+	// Use a client with no timeout for streaming (different from the default httpClient)
+	streamingClient := &http.Client{
+		Timeout: 0, // No timeout for streaming audio
+	}
+	
+	resp, err := streamingClient.Do(req)
 	if err != nil {
-		fmt.Printf("[AUDIO DEBUG] HTTP request failed: %v\n", err)
 		p.emitEvent("error", p.currentID, 0, 0)
 		return
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("[AUDIO DEBUG] HTTP response status: %d\n", resp.StatusCode)
+	
+	
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("[AUDIO DEBUG] Bad HTTP status: %d\n", resp.StatusCode)
 		p.emitEvent("error", p.currentID, 0, 0)
 		return
 	}
 
 	// Detect audio format from URL, content-type, or format hint
 	format := p.detectAudioFormat(p.currentURL, resp.Header.Get("Content-Type"))
-	fmt.Printf("[AUDIO DEBUG] Detected format: %s, Content-Type: %s, Format hint: %s\n", format, resp.Header.Get("Content-Type"), p.formatHint)
 
 	// Use appropriate decoder based on format
 	var audioReader io.Reader
 	if format != "" {
 		decoder, err := NewDecoder(format)
 		if err != nil {
-			fmt.Printf("[AUDIO DEBUG] Failed to create decoder for %s: %v\n", format, err)
-			p.emitEvent("error", p.currentID, 0, 0)
-			return
+			// Fallback to MP3 decoder
+			decoder, err = NewDecoder("mp3")
+			if err != nil {
+				p.emitEvent("error", p.currentID, 0, 0)
+				return
+			}
 		}
 
+		
 		decodedReader, err := decoder.Decode(resp.Body)
 		if err != nil {
-			fmt.Printf("[AUDIO DEBUG] Failed to decode %s: %v\n", format, err)
-			p.emitEvent("error", p.currentID, 0, 0)
-			return
-		}
+			// Reset response body - we need to make a new request
+			resp.Body.Close()
+			
+			// Make new request for fallback
+			req2, err := http.NewRequest("GET", p.currentURL, nil)
+			if err != nil {
+				p.emitEvent("error", p.currentID, 0, 0)
+				return
+			}
+			req2.Header.Set("User-Agent", "navitone-cli/1.0")
+			
+			resp2, err := streamingClient.Do(req2)
+			if err != nil {
+				p.emitEvent("error", p.currentID, 0, 0)
+				return
+			}
+			defer resp2.Body.Close()
+			
+			if resp2.StatusCode != http.StatusOK {
+				p.emitEvent("error", p.currentID, 0, 0)
+				return
+			}
+			
+			// Try MP3 decoder
+			mp3Decoder, err := NewDecoder("mp3")
+			if err != nil {
+				p.emitEvent("error", p.currentID, 0, 0)
+				return
+			}
+			
+			decodedReader, err = mp3Decoder.Decode(resp2.Body)
+			if err != nil {
+				p.emitEvent("error", p.currentID, 0, 0)
+				return
+			}
+			
+		} else {
+			}
 
-		fmt.Printf("[AUDIO DEBUG] Successfully created %s decoder\n", format)
-		fmt.Printf("[AUDIO DEBUG] Decoder sample rate: %d\n", decoder.SampleRate())
-		fmt.Printf("[AUDIO DEBUG] Decoder channels: %d\n", decoder.Channels())
 
 		audioReader = decodedReader
 	} else {
-		fmt.Printf("[AUDIO DEBUG] Unknown format, cannot decode\n")
 		p.emitEvent("error", p.currentID, 0, 0)
 		return
 	}
 
 	// Create a new Oto player for this stream
 	p.mu.Lock()
-	fmt.Printf("[AUDIO DEBUG] Creating Oto player from audioReader\n")
 	p.player = p.context.NewPlayer(audioReader)
-	fmt.Printf("[AUDIO DEBUG] Oto player created successfully\n")
 	p.mu.Unlock()
 
-	fmt.Printf("[AUDIO DEBUG] Starting playback\n")
 	// Start playback
 	p.player.Play()
-	fmt.Printf("[AUDIO DEBUG] Called player.Play() - audio should be playing now\n")
 
 	// Position tracking loop
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -370,10 +416,36 @@ func (p *Player) playbackLoop() {
 			}
 
 		default:
-			// Check if playbook finished
-			if p.player != nil && !p.player.IsPlaying() {
-				p.emitEvent("finished", p.currentID, p.position, p.duration)
-				return
+			// Check if track finished - use multiple criteria to avoid false positives
+			if p.player != nil {
+				isPlaying := p.player.IsPlaying()
+				
+				// Get current state for debugging
+				p.mu.RLock()
+				currentPosition := p.position
+				trackDuration := p.duration
+				trackID := p.currentID
+				p.mu.RUnlock()
+				
+				
+				if !isPlaying {
+					// Only consider track "finished" if:
+					// 1. Player reports not playing AND
+					// 2. We've played for at least 30 seconds (to avoid false positives) AND
+					// 3. Either we've played 90% of the track OR we've exceeded the track duration
+					minPlayTime := 30 * time.Second
+					finishThreshold := time.Duration(float64(trackDuration) * 0.9) // 90% of track
+					
+					hasPlayedMinimum := currentPosition >= minPlayTime
+					hasPlayedMostOfTrack := currentPosition >= finishThreshold
+					hasExceededDuration := trackDuration > 0 && currentPosition >= trackDuration
+					
+					if hasPlayedMinimum && (hasPlayedMostOfTrack || hasExceededDuration) {
+						p.emitEvent("finished", trackID, currentPosition, trackDuration)
+						return
+					}
+					// Don't emit finished event for premature stops
+				}
 			}
 		}
 	}

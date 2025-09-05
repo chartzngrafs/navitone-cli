@@ -26,11 +26,13 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Audio Decoders** ✅ - Custom PCM conversion pipeline for all supported formats
 - **Queue Management** ✅ - Complete queue controls: add, remove, clear, play/pause/next/prev
 - **Scrobbling System** ✅ - Full Last.fm and ListenBrainz support with Now Playing updates
-- **Albums Tab** - Live data browsing with navigation, selection, and queue integration
-- **Artists Tab** - Live artist browsing with album counts and starred indicators
+- **Albums Tab** ✅ - Live data browsing, modal track views, enhanced queue integration
+- **Artists Tab** ✅ - Live artist browsing, nested album/track modals, smart navigation
 - **Tracks Tab** - Live track browsing with formatted display and queue integration
+- **Modal System** ✅ - Album track modals, artist album modals, nested navigation
+- **Enhanced Keybindings** ✅ - Alt+Enter shortcuts, context-aware controls, intuitive workflow
 - **UI Framework** - Bubble Tea with Lipgloss styling and visual feedback
-- **Help System** - Context-aware overlay with F1/? toggle
+- **Help System** ✅ - Context-aware overlay with comprehensive keybinding documentation
 - **Connection Testing** - Async Navidrome server validation
 - **Loading States** - Async data loading with error handling and retry
 
@@ -76,18 +78,22 @@ navitone-cli/
 - Random Albums (Not Implemented)
 
 ### 💿 Albums
-- Live data from Navidrome server
+- Live data from Navidrome server with pagination support
 - Format: `[Year] Artist - Album (Track count)`
-- ↑↓ navigation with visual selection
-- Enter to add album to queue
-- R to refresh, pagination for large collections
+- ↑↓ navigation with visual selection highlighting
+- **Enter** - Opens album tracks modal with detailed track listing
+- **Alt+Enter/A** - Queue entire album immediately (bypass modal)
+- **R** - Refresh albums list, maintains selection position
+- **Modal Features**: Track-by-track navigation, play from any track, queue remainder
 
 ### 🎤 Artists  
-- Live artist browsing from Navidrome
-- Format: `Artist Name (X albums)`
-- Star indicators (★) for favorited artists
+- Live artist browsing from Navidrome with full metadata
+- Format: `Artist Name (X albums)` with starred favorites (★)
 - ↑↓ navigation with selection highlighting
-- Enter to add artist to queue
+- **Enter** - Opens artist albums modal showing all albums by artist
+- **R** - Refresh artists list
+- **Nested Navigation**: Artist → Albums → Tracks with seamless modal transitions
+- **Album Modal Features**: Enter = view tracks, Alt+Enter/A = queue all albums
 
 ### 🎵 Tracks
 - Live track browsing from Navidrome (random tracks)
@@ -183,11 +189,15 @@ The application will automatically download required Go dependencies:
 
 ### Browse Your Music Library
 1. Navigate to **Albums** tab - browse your album collection
-   - Use ↑↓ to navigate, Enter to add to queue
+   - Use ↑↓ to navigate, Enter to view tracks in modal
+   - Alt+Enter or A to queue entire album immediately
+   - In album modal: Enter to play track + queue remainder
    - Press R to refresh the list
 2. Navigate to **Artists** tab - browse by artist
    - See album counts and starred favorites (★)
-   - Same navigation: ↑↓ and Enter to add to queue
+   - Enter to view artist's albums in modal
+   - Navigate albums → Enter to view tracks → play from any track
+   - Alt+Enter or A to queue all albums from artist
 3. Navigate to **Tracks** tab - browse individual tracks
    - Random tracks from your library
    - Enter to add individual tracks to queue
@@ -196,12 +206,13 @@ The application will automatically download required Go dependencies:
    - **✅ Enter/Space to play tracks with real audio**
    - **✅ Ctrl+N/P for next/previous, +/- for volume**
 
-### Playback Controls ✅ WORKING
-- **Space** - Play/Pause current track
-- **Ctrl+N** - Next track
-- **Ctrl+P** - Previous track
-- **+/-** - Volume control
-- **Multi-format Support** - FLAC, MP3, OGG, WAV streaming
+### Enhanced Navigation & Playback ✅ WORKING
+- **Global Playback**: Ctrl+P (play/pause), Ctrl+N (next), Ctrl+B (previous)
+- **Volume Control**: +/- keys for volume adjustment
+- **Multi-format Support**: FLAC, MP3, OGG, WAV streaming with real-time playback
+- **Smart Queue Management**: Play from any track, queue remainder automatically
+- **Modal Navigation**: Seamless drilling down from artists → albums → tracks
+- **Quick Actions**: Alt+Enter for immediate queuing, bypass confirmation modals
 
 ## ⚙️ Configuration
 
@@ -269,11 +280,13 @@ go build -o bin/navitone ./cmd/navitone
 - [x] Interactive configuration forms with validation
 - [x] Navidrome API integration with connection testing
 - [x] Comprehensive scrobbling support (Last.fm & ListenBrainz)
-- [x] Albums tab with live data browsing and queue integration
-- [x] Artists tab with live data browsing and selection
-- [x] Tracks tab with live data browsing and queue integration
+- [x] **Albums tab with modal track views and enhanced navigation** ✅ (COMPLETE)
+- [x] **Artists tab with nested album/track modals** ✅ (COMPLETE)
+- [x] **Tracks tab with live data browsing and queue integration** ✅ (COMPLETE)
+- [x] **Modal system with intuitive navigation flow** ✅ (COMPLETE)
+- [x] **Enhanced keybindings (Alt+Enter, context-aware controls)** ✅ (COMPLETE)
 - [x] **Audio playback system with multi-format support** ✅ (COMPLETE)
-- [x] **Queue management with playback controls** ✅ (COMPLETE)
+- [x] **Queue management with smart playback controls** ✅ (COMPLETE)
 - [x] **Audio encoding/decoding pipeline** ✅ (COMPLETE)
 - [ ] **Playlists tab with playlist management** (Not Started)
 - [ ] **Home tab with proper curated sections** (Partially Done)
@@ -315,4 +328,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Note**: This project is in active development with **core audio functionality now complete**! The audio playback system, multi-format encoding/decoding, and queue management are fully working. See the Current Status section above for what's currently working.
 
-**Latest Update**: ✅ Audio system is complete with FLAC, MP3, OGG, and WAV support, plus full queue management and playback controls.
+**Latest Update**: ✅ Enhanced navigation system complete! Modal-based album/track browsing, Alt+Enter quick queuing, smart playback (play from any track + queue remainder), and comprehensive keybindings for intuitive workflow.

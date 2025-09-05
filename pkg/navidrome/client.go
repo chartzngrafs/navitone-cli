@@ -323,8 +323,7 @@ func (c *Client) GetArtistTracks(ctx context.Context, artistID string) (*SongsRe
 	for _, album := range albumsResp.SubsonicResponse.AlbumList2.Album {
 		tracksResp, err := c.GetAlbumTracks(ctx, album.ID)
 		if err != nil {
-			// Log error but continue with other albums
-			fmt.Printf("Warning: failed to get tracks for album %s: %v\n", album.Name, err)
+			// Skip albums that fail to load tracks
 			continue
 		}
 
@@ -393,11 +392,89 @@ func (c *Client) GetArtistAlbums(ctx context.Context, artistID string) (*AlbumsR
 	return convertedResp, nil
 }
 
-// GetStreamURL returns the streaming URL for a song
+// GetStreamURL returns the streaming URL for a song with proper parameters for full track access
 func (c *Client) GetStreamURL(songID string) string {
 	params, _ := c.authenticate()
 	params.Add("id", songID)
+	// According to Subsonic API: maxBitRate=0 means no limit imposed
+	params.Add("maxBitRate", "0")
+	// Request original format without transcoding  
+	params.Add("format", "raw")
+	// Enable content length estimation for better streaming
+	params.Add("estimateContentLength", "true")
 	return fmt.Sprintf("%s/rest/stream?%s", c.baseURL, params.Encode())
+}
+
+// GetDownloadURL returns the download URL for a song (guaranteed full track)
+func (c *Client) GetDownloadURL(songID string) string {
+	params, _ := c.authenticate()
+	params.Add("id", songID)
+	return fmt.Sprintf("%s/rest/download?%s", c.baseURL, params.Encode())
+}
+
+// GetStreamURLWithFallback returns streaming URL with fallback to download URL
+func (c *Client) GetStreamURLWithFallback(songID string) string {
+	// First try the stream endpoint with full parameters
+	streamURL := c.GetStreamURL(songID)
+	
+	// Note: If 30-second limit persists, it may be due to:
+	// 1. User account lacking 'streamRole' permission in Navidrome
+	// 2. Server configured with forced preview mode
+	// 3. License limitations (some servers limit non-premium users)
+	return streamURL
+}
+
+// GetUser retrieves user details including permissions
+func (c *Client) GetUser(ctx context.Context, username string) (*UserResponse, error) {
+	params := url.Values{}
+	if username != "" {
+		params.Add("username", username)
+	}
+
+	resp, err := c.makeRequest(ctx, "getUser", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading user response: %w", err)
+	}
+
+	var userResp UserResponse
+	if err := json.Unmarshal(body, &userResp); err != nil {
+		return nil, fmt.Errorf("parsing user response: %w", err)
+	}
+
+	if userResp.SubsonicResponse.Status != "ok" {
+		if userResp.SubsonicResponse.Error != nil {
+			return nil, fmt.Errorf("user error: %s", userResp.SubsonicResponse.Error.Message)
+		}
+		return nil, fmt.Errorf("user request failed with status: %s", userResp.SubsonicResponse.Status)
+	}
+
+	return &userResp, nil
+}
+
+// CheckUserPermissions checks if the current user has proper streaming permissions
+func (c *Client) CheckUserPermissions(ctx context.Context) error {
+	userResp, err := c.GetUser(ctx, c.username)
+	if err != nil {
+		return fmt.Errorf("failed to get user info: %w", err)
+	}
+
+	user := userResp.SubsonicResponse.User
+	
+	
+	if !user.StreamRole {
+		return fmt.Errorf("STREAMING LIMITATION FOUND: User '%s' lacks 'streamRole' permission. This causes 30-second preview limits. Contact your Navidrome admin to enable full streaming access", user.Username)
+	}
+	
+	if user.MaxBitRate > 0 && user.MaxBitRate < 128 {
+	}
+	
+	return nil
 }
 
 // Scrobble submits a scrobble to the server

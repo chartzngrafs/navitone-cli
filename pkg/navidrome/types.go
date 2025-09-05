@@ -173,3 +173,31 @@ type RandomSongsResponse struct {
 		RandomSongs SongsList `json:"randomSongs"`
 	} `json:"subsonic-response"`
 }
+
+// User represents a user from Navidrome
+type User struct {
+	Username             string `json:"username"`
+	Email                string `json:"email"`
+	ScrobblingEnabled    bool   `json:"scrobblingEnabled"`
+	MaxBitRate           int    `json:"maxBitRate"`
+	AdminRole            bool   `json:"adminRole"`
+	SettingsRole         bool   `json:"settingsRole"`
+	DownloadRole         bool   `json:"downloadRole"`
+	UploadRole           bool   `json:"uploadRole"`
+	PlaylistRole         bool   `json:"playlistRole"`
+	CoverArtRole         bool   `json:"coverArtRole"`
+	CommentRole          bool   `json:"commentRole"`
+	PodcastRole          bool   `json:"podcastRole"`
+	StreamRole           bool   `json:"streamRole"`
+	JukeboxRole          bool   `json:"jukeboxRole"`
+	ShareRole            bool   `json:"shareRole"`
+	VideoConversionRole  bool   `json:"videoConversionRole"`
+}
+
+// UserResponse represents the response from getUser
+type UserResponse struct {
+	SubsonicResponse struct {
+		BaseResponse
+		User User `json:"user"`
+	} `json:"subsonic-response"`
+}

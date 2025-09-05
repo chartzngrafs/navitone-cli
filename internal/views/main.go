@@ -116,13 +116,25 @@ func (v *MainView) Render() string {
 
 	// Footer with playback controls
 	sections = append(sections, v.renderFooter())
+	
+	// Log area at the bottom
+	sections = append(sections, v.renderLogArea())
 
 	// Help overlay if active
 	if v.state.ShowHelp {
 		return v.renderHelpOverlay(strings.Join(sections, "\n"))
 	}
 
-	return strings.Join(sections, "\n")
+	// Modal overlays if active
+	content := strings.Join(sections, "\n")
+	if v.state.ShowAlbumModal {
+		return v.renderAlbumModalOverlay(content)
+	}
+	if v.state.ShowArtistModal {
+		return v.renderArtistModalOverlay(content)
+	}
+
+	return content
 }
 
 // renderHeader creates the header with tab navigation
@@ -143,7 +155,7 @@ func (v *MainView) renderHeader() string {
 
 // renderContent creates the main content area based on current tab
 func (v *MainView) renderContent() string {
-	contentHeight := v.height - 4 // Account for header and footer
+	contentHeight := v.height - 6 // Account for header, footer, and log area
 	content := v.styles.Content.
 		Width(v.width - 2).
 		Height(contentHeight)
@@ -303,7 +315,7 @@ func (v *MainView) renderAlbumsTab() string {
 	content.WriteString("💿 Albums\n\n")
 	
 	// Show instructions
-	content.WriteString("↑↓ Navigate • Enter to add to queue • R to refresh\n\n")
+	content.WriteString("↑↓ Navigate • Enter to view tracks • Alt+Enter/A to queue album • R to refresh\n\n")
 	
 	// Render album list
 	startIdx := 0
@@ -371,7 +383,7 @@ func (v *MainView) renderArtistsTab() string {
 	content.WriteString("🎤 Artists\n\n")
 	
 	// Show instructions
-	content.WriteString("↑↓ Navigate • Enter to add to queue • R to refresh\n\n")
+	content.WriteString("↑↓ Navigate • Enter to view albums • R to refresh\n\n")
 	
 	// Render artist list
 	startIdx := 0
@@ -739,26 +751,235 @@ func (v *MainView) renderHelpOverlay(background string) string {
 // getContextualHelp returns help content based on current context
 func (v *MainView) getContextualHelp() string {
 	help := "NAVITONE-CLI HELP\n\n"
+	
+	// Check if we're in a modal first
+	if v.state.ShowAlbumModal {
+		help += "Album Tracks Modal:\n"
+		help += "↑↓ / j/k       - Navigate tracks\n"
+		help += "Enter          - Play track & queue remainder\n"
+		help += "A              - Add all tracks to queue\n"
+		help += "Esc / q        - Close modal\n\n"
+	} else if v.state.ShowArtistModal {
+		help += "Artist Albums Modal:\n"
+		help += "↑↓ / j/k       - Navigate albums\n"
+		help += "Enter          - View album tracks (modal)\n"
+		help += "A / Alt+Enter  - Add all albums to queue\n"
+		help += "Esc / q        - Close modal\n\n"
+	}
+	
+	// Global shortcuts (always shown)
 	help += "Global Navigation:\n"
 	help += "Tab/Shift+Tab  - Switch tabs\n"
 	help += "F1 / ?         - Toggle this help\n"
-	help += "Ctrl+C / q     - Quit\n\n"
+	help += "Ctrl+C / q     - Quit application\n\n"
 	
+	// Global playback controls (always shown)
+	help += "Playback Controls:\n"
+	help += "Ctrl+P         - Play/Pause\n"
+	help += "Ctrl+N         - Next track\n"
+	help += "Ctrl+B         - Previous track\n"
+	help += "Ctrl+S         - Stop\n\n"
+	
+	// Tab-specific shortcuts
 	switch v.state.CurrentTab {
 	case models.HomeTab:
 		help += "Home Tab:\n"
-		help += "Browse recent and popular albums\n"
+		help += "View library overview and recently added content\n"
+	case models.AlbumsTab:
+		help += "Albums Tab:\n"
+		help += "↑↓ / j/k       - Navigate albums\n"
+		help += "Enter          - View album tracks (modal)\n"
+		help += "Alt+Enter/A    - Queue entire album\n"
+		help += "R              - Refresh albums list\n"
+	case models.ArtistsTab:
+		help += "Artists Tab:\n"
+		help += "↑↓ / j/k       - Navigate artists\n"
+		help += "Enter          - View artist albums (modal)\n"
+		help += "R              - Refresh artists list\n"
+	case models.TracksTab:
+		help += "Tracks Tab:\n"
+		help += "↑↓ / j/k       - Navigate tracks\n"
+		help += "Enter          - Add track to queue\n"
+		help += "R              - Refresh tracks list\n"
 	case models.QueueTab:
 		help += "Queue Tab:\n"
-		help += "Manage current playback queue\n"
-		help += "Del - Remove selected track\n"
-		help += "C   - Clear queue\n"
-	default:
-		help += fmt.Sprintf("%s Tab:\n", v.state.CurrentTab.String())
-		help += "Browse and select items\n"
-		help += "Enter - Add to queue\n"
+		help += "↑↓ / j/k       - Navigate queue\n"
+		help += "Enter/Space    - Play selected track\n"
+		help += "Del / X        - Remove selected track\n"
+		help += "C              - Clear entire queue\n"
+	case models.ConfigTab:
+		help += "Config Tab:\n"
+		help += "↑↓ / j/k       - Navigate fields\n"
+		help += "Enter          - Edit field / toggle checkbox\n"
+		help += "F2             - Save configuration\n"
+		help += "F3             - Test Navidrome connection\n"
+	case models.PlaylistsTab:
+		help += "Playlists Tab:\n"
+		help += "(Coming soon - playlist management)\n"
 	}
 	
 	help += "\nPress F1 or ? to close help"
 	return help
+}
+
+// renderLogArea creates the log area at the bottom showing recent events
+func (v *MainView) renderLogArea() string {
+	logStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Background(lipgloss.Color("235")).
+		Padding(0, 1).
+		Width(v.width)
+
+	if len(v.state.LogMessages) == 0 {
+		// Show empty log area to maintain consistent layout
+		return logStyle.Render("")
+	}
+
+	// Show up to 2 most recent log messages
+	var logLines []string
+	for _, msg := range v.state.LogMessages {
+		logLines = append(logLines, msg)
+	}
+	
+	// Pad to always show 2 lines for consistent layout
+	for len(logLines) < 2 {
+		logLines = append(logLines, "")
+	}
+
+	logContent := strings.Join(logLines, "\n")
+	return logStyle.Render(logContent)
+}
+
+// renderAlbumModalOverlay renders the album tracks modal overlay
+func (v *MainView) renderAlbumModalOverlay(background string) string {
+	if v.state.SelectedAlbum == nil {
+		return background
+	}
+
+	var content strings.Builder
+	
+	// Modal header
+	content.WriteString(fmt.Sprintf("🎵 %s - %s (%d)\n\n", 
+		v.state.SelectedAlbum.Artist, v.state.SelectedAlbum.Name, v.state.SelectedAlbum.Year))
+
+	if v.state.LoadingModalContent {
+		content.WriteString("Loading tracks...")
+	} else if len(v.state.AlbumTracks) == 0 {
+		content.WriteString("No tracks found.")
+	} else {
+		// Instructions
+		content.WriteString("↑↓ Navigate • Enter to play & queue remainder • A to add all • Esc to close\n\n")
+		
+		// Track list
+		for i, track := range v.state.AlbumTracks {
+			line := v.formatModalTrackLine(track, i, i == v.state.SelectedModalIndex)
+			content.WriteString(line)
+			content.WriteString("\n")
+		}
+	}
+
+	// Center the modal overlay (styling is applied in overlayModal)
+	return v.overlayModal(background, content.String(), 80, 25)
+}
+
+// renderArtistModalOverlay renders the artist albums modal overlay
+func (v *MainView) renderArtistModalOverlay(background string) string {
+	if v.state.SelectedArtist == nil {
+		return background
+	}
+
+	var content strings.Builder
+	
+	// Modal header
+	albumText := "album"
+	if v.state.SelectedArtist.AlbumCount != 1 {
+		albumText = "albums"
+	}
+	content.WriteString(fmt.Sprintf("🎤 %s (%d %s)\n\n", 
+		v.state.SelectedArtist.Name, v.state.SelectedArtist.AlbumCount, albumText))
+
+	if v.state.LoadingModalContent {
+		content.WriteString("Loading albums...")
+	} else if len(v.state.ArtistAlbums) == 0 {
+		content.WriteString("No albums found.")
+	} else {
+		// Instructions
+		content.WriteString("↑↓ Navigate • Enter to view tracks • A/Alt+Enter to queue all • Esc to close\n\n")
+		
+		// Album list
+		for i, album := range v.state.ArtistAlbums {
+			line := v.formatModalAlbumLine(album, i == v.state.SelectedModalIndex)
+			content.WriteString(line)
+			content.WriteString("\n")
+		}
+	}
+
+	// Center the modal overlay (styling is applied in overlayModal)
+	return v.overlayModal(background, content.String(), 80, 25)
+}
+
+// formatModalTrackLine formats a track line for modal display
+func (v *MainView) formatModalTrackLine(track models.Track, index int, selected bool) string {
+	// Format: Track# Title [Duration]
+	trackNum := ""
+	if track.Track > 0 {
+		trackNum = fmt.Sprintf("%02d. ", track.Track)
+	} else {
+		trackNum = fmt.Sprintf("%2d. ", index+1)
+	}
+	
+	// Format duration (seconds to mm:ss)
+	duration := ""
+	if track.Duration > 0 {
+		minutes := track.Duration / 60
+		seconds := track.Duration % 60
+		duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
+	}
+	
+	line := fmt.Sprintf("%s%s%s", trackNum, track.Title, duration)
+	
+	if selected {
+		return v.styles.ActiveField.Render("> " + line)
+	}
+	
+	return "  " + line
+}
+
+// formatModalAlbumLine formats an album line for modal display  
+func (v *MainView) formatModalAlbumLine(album models.Album, selected bool) string {
+	// Format: [Year] Album Name (Tracks)
+	yearStr := ""
+	if album.Year > 0 {
+		yearStr = fmt.Sprintf("[%d] ", album.Year)
+	}
+	
+	line := fmt.Sprintf("%s%s (%d tracks)", yearStr, album.Name, album.TrackCount)
+	
+	if selected {
+		return v.styles.ActiveField.Render("> " + line)
+	}
+	
+	return "  " + line
+}
+
+// overlayModal overlays a modal on the background content using lipgloss positioning
+func (v *MainView) overlayModal(_ /* background */, modal string, modalWidth, modalHeight int) string {
+	// Use lipgloss to properly position the modal
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("63")).
+		Background(lipgloss.Color("235")).
+		Padding(1).
+		Width(modalWidth-4). // Account for border and padding
+		Height(modalHeight-4).
+		Align(lipgloss.Center, lipgloss.Center)
+	
+	// Position the modal in the center of the available space
+	positionedModal := lipgloss.Place(
+		v.width, v.height,
+		lipgloss.Center, lipgloss.Center,
+		modalStyle.Render(modal),
+	)
+	
+	return positionedModal
 }

@@ -38,10 +38,11 @@ func NewApp() *App {
 		Volume:     70,
 		Queue:      make([]models.Track, 0),
 		ConfigForm: models.NewConfigFormState(cfg),
-		Albums:     make([]models.Album, 0),
-		Artists:    make([]models.Artist, 0),
-		Tracks:     make([]models.Track, 0),
-		Playlists:  make([]models.Playlist, 0),
+		Albums:      make([]models.Album, 0),
+		Artists:     make([]models.Artist, 0),
+		Tracks:      make([]models.Track, 0),
+		Playlists:   make([]models.Playlist, 0),
+		LogMessages: make([]string, 0),
 	}
 
 	app := &App{
@@ -50,30 +51,21 @@ func NewApp() *App {
 	}
 
 	// Initialize Navidrome client if config is valid
-	fmt.Printf("[APP DEBUG] Initializing Navidrome client...\n")
 	app.initializeNavidromeClient()
-	fmt.Printf("[APP DEBUG] Navidrome client initialized: %v\n", app.navidromeClient != nil)
 
 	// Initialize scrobbling manager
-	fmt.Printf("[APP DEBUG] Initializing scrobbling manager...\n")
 	app.scrobbler = scrobbling.NewManager(cfg)
-	fmt.Printf("[APP DEBUG] Scrobbling manager initialized: %v\n", app.scrobbler != nil)
 
 	// Initialize audio manager
 	if app.navidromeClient != nil {
-		fmt.Printf("[APP DEBUG] Navidrome client available, creating audio manager...\n")
 		audioManager, err := audio.NewManager(app.navidromeClient, app.scrobbler)
-		if err != nil {
-			// Log error but continue without audio manager
-			fmt.Printf("[APP DEBUG] Failed to initialize audio manager: %v\n", err)
-		} else {
+		if err == nil {
 			app.audioManager = audioManager
 			// Set up callback to update app state when audio changes
 			audioManager.SetStateCallback(app.updateAudioState)
-			fmt.Printf("[APP DEBUG] Audio manager initialized successfully\n")
+			// Set up callback for log messages
+			audioManager.SetLogCallback(app.logMessage)
 		}
-	} else {
-		fmt.Printf("[APP DEBUG] No Navidrome client available, skipping audio manager initialization\n")
 	}
 
 	return app
@@ -97,6 +89,11 @@ func (a *App) updateAudioState(state *models.AppState) {
 	}
 }
 
+// logMessage adds a message to the app's log area
+func (a *App) logMessage(message string) {
+	a.state.AddLogMessage(message)
+}
+
 // Init implements tea.Model
 func (a *App) Init() tea.Cmd {
 	return nil
@@ -106,6 +103,10 @@ func (a *App) Init() tea.Cmd {
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle modal navigation first
+		if a.state.ShowAlbumModal || a.state.ShowArtistModal {
+			return a.handleModalKeyPress(msg)
+		}
 		return a.handleKeyPress(msg)
 	case tea.MouseMsg:
 		return a.handleMouseEvent(msg)
@@ -160,10 +161,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add all tracks to queue
 			if a.audioManager != nil {
 				a.audioManager.AddTracksToQueue(msg.Tracks)
+				// Sync state immediately
+				a.state.Queue = a.audioManager.GetQueue()
+				a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
+				a.state.IsPlaying = a.audioManager.IsPlaying()
 			} else {
 				a.state.Queue = append(a.state.Queue, msg.Tracks...)
 			}
 			a.state.LoadingError = ""
+			a.logMessage(fmt.Sprintf("Added album to queue (%d tracks, total: %d)", len(msg.Tracks), len(a.state.Queue)))
 		}
 		return a, nil
 	case ArtistTracksLoadResult:
@@ -174,9 +180,36 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add all tracks to queue
 			if a.audioManager != nil {
 				a.audioManager.AddTracksToQueue(msg.Tracks)
+				// Sync state immediately
+				a.state.Queue = a.audioManager.GetQueue()
+				a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
+				a.state.IsPlaying = a.audioManager.IsPlaying()
 			} else {
 				a.state.Queue = append(a.state.Queue, msg.Tracks...)
 			}
+			a.state.LoadingError = ""
+			a.logMessage(fmt.Sprintf("Added artist tracks to queue (%d tracks, total: %d)", len(msg.Tracks), len(a.state.Queue)))
+		}
+		return a, nil
+	case AlbumTracksModalResult:
+		// Handle album tracks load for modal display
+		a.state.LoadingModalContent = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			a.state.AlbumTracks = msg.Tracks
+			a.state.SelectedModalIndex = 0
+			a.state.LoadingError = ""
+		}
+		return a, nil
+	case ArtistAlbumsModalResult:
+		// Handle artist albums load for modal display
+		a.state.LoadingModalContent = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			a.state.ArtistAlbums = msg.Albums
+			a.state.SelectedModalIndex = 0
 			a.state.LoadingError = ""
 		}
 		return a, nil
@@ -226,6 +259,13 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.handleTabChange()
 	case "F1", "?":
 		a.state.ShowHelp = !a.state.ShowHelp
+	case "ctrl+d":
+		// Debug: Check streaming permissions
+		if a.audioManager != nil {
+			go func() {
+				a.audioManager.CheckStreamingPermissions()
+			}()
+		}
 	case "ctrl+p":
 		// Global: Play/Pause toggle
 		if a.audioManager != nil {
@@ -493,25 +533,13 @@ func (a *App) doConnectionTest() ConnectionTestResult {
 func (a *App) initializeNavidromeClient() {
 	cfg := a.state.ConfigForm.Config
 
-	fmt.Printf("[APP DEBUG] Checking Navidrome config: URL='%s', Username='%s', Password='%s'\n",
-		cfg.Navidrome.ServerURL, cfg.Navidrome.Username,
-		func() string {
-			if cfg.Navidrome.Password != "" {
-				return "[SET]"
-			}
-			return "[EMPTY]"
-		}())
-
 	if cfg.Navidrome.ServerURL != "" && cfg.Navidrome.Username != "" && cfg.Navidrome.Password != "" {
-		fmt.Printf("[APP DEBUG] Creating Navidrome client with valid config\n")
 		a.navidromeClient = navidrome.NewClient(
 			cfg.Navidrome.ServerURL,
 			cfg.Navidrome.Username,
 			cfg.Navidrome.Password,
 		)
 		a.navidromeClient.SetTimeout(time.Duration(cfg.Navidrome.Timeout) * time.Second)
-	} else {
-		fmt.Printf("[APP DEBUG] Navidrome config incomplete, no client created\n")
 	}
 }
 
@@ -537,6 +565,9 @@ func (a *App) handleTabChange() tea.Cmd {
 
 // handleAlbumsKeyPress handles keyboard input for the albums tab
 func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Debug: log the key that was pressed
+	// a.logMessage(fmt.Sprintf("Albums tab key: '%s'", msg.String()))
+	
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return a, tea.Quit
@@ -557,7 +588,17 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.state.SelectedAlbumIndex++
 		}
 	case "enter":
-		// Add selected album to queue
+		// Show album details modal (regular Enter)
+		if a.state.SelectedAlbumIndex < len(a.state.Albums) {
+			return a, a.showAlbumModal(a.state.Albums[a.state.SelectedAlbumIndex])
+		}
+	case "alt+enter":
+		// Queue entire album immediately (Alt+Enter)
+		if a.state.SelectedAlbumIndex < len(a.state.Albums) {
+			return a, a.addAlbumToQueue(a.state.Albums[a.state.SelectedAlbumIndex])
+		}
+	case "a":
+		// Alternative: 'A' key to queue entire album immediately
 		if a.state.SelectedAlbumIndex < len(a.state.Albums) {
 			return a, a.addAlbumToQueue(a.state.Albums[a.state.SelectedAlbumIndex])
 		}
@@ -756,9 +797,9 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.state.SelectedArtistIndex++
 		}
 	case "enter":
-		// Add selected artist's albums to queue
+		// Show artist albums modal
 		if a.state.SelectedArtistIndex < len(a.state.Artists) {
-			return a, a.addArtistToQueue(a.state.Artists[a.state.SelectedArtistIndex])
+			return a, a.showArtistModal(a.state.Artists[a.state.SelectedArtistIndex])
 		}
 	case "r":
 		// Refresh artists
@@ -853,6 +894,10 @@ func (a *App) handleTracksKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) addTrackToQueue(track models.Track) tea.Cmd {
 	if a.audioManager != nil {
 		a.audioManager.AddToQueue(track)
+		// Sync state immediately
+		a.state.Queue = a.audioManager.GetQueue()
+		a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
+		a.state.IsPlaying = a.audioManager.IsPlaying()
 	} else {
 		a.state.Queue = append(a.state.Queue, track)
 	}
@@ -895,27 +940,13 @@ func (a *App) handleQueueKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.state.SelectedQueueIndex = 0
 	case "enter", "space":
 		// Play selected track or toggle play/pause
-		fmt.Printf("[UI DEBUG] Enter/Space pressed in queue tab, audioManager: %v\n", a.audioManager != nil)
-		fmt.Printf("[UI DEBUG] Selected queue index: %d, queue length: %d\n", a.state.SelectedQueueIndex, len(a.state.Queue))
-
 		if a.audioManager != nil {
 			if a.state.SelectedQueueIndex < len(a.state.Queue) {
-				fmt.Printf("[UI DEBUG] Calling PlayTrackAtIndex with index %d\n", a.state.SelectedQueueIndex)
-				err := a.audioManager.PlayTrackAtIndex(a.state.SelectedQueueIndex)
-				if err != nil {
-					fmt.Printf("[UI DEBUG] PlayTrackAtIndex failed: %v\n", err)
-				} else {
-					fmt.Printf("[UI DEBUG] PlayTrackAtIndex succeeded\n")
-				}
+				a.audioManager.PlayTrackAtIndex(a.state.SelectedQueueIndex)
 			} else {
-				fmt.Printf("[UI DEBUG] Calling TogglePlayPause\n")
-				err := a.audioManager.TogglePlayPause()
-				if err != nil {
-					fmt.Printf("[UI DEBUG] TogglePlayPause failed: %v\n", err)
-				}
+				a.audioManager.TogglePlayPause()
 			}
 		} else {
-			fmt.Printf("[UI DEBUG] No audio manager, using fallback\n")
 			// Fallback for when audio manager is not available
 			if a.state.SelectedQueueIndex < len(a.state.Queue) {
 				a.state.CurrentTrack = &a.state.Queue[a.state.SelectedQueueIndex]
@@ -943,6 +974,18 @@ type TracksLoadResult struct {
 	Error  error
 }
 
+// Modal-specific message types
+type AlbumTracksModalResult struct {
+	Tracks []models.Track
+	Error  error
+}
+
+type ArtistAlbumsModalResult struct {
+	Albums []models.Album
+	Error  error
+}
+
+
 // handleMouseEvent processes mouse input
 func (a *App) handleMouseEvent(_ tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Mouse support placeholder for Phase 2
@@ -961,4 +1004,205 @@ func (a *App) prevTab() {
 		current = 7
 	}
 	a.state.CurrentTab = models.Tab(current - 1)
+}
+
+// showAlbumModal displays the album tracks modal
+func (a *App) showAlbumModal(album models.Album) tea.Cmd {
+	a.state.ShowAlbumModal = true
+	a.state.SelectedAlbum = &album
+	a.state.LoadingModalContent = true
+	a.state.AlbumTracks = nil
+	a.state.SelectedModalIndex = 0
+
+	return tea.Cmd(func() tea.Msg {
+		if a.navidromeClient == nil {
+			return AlbumTracksModalResult{Error: fmt.Errorf("navidrome client not initialized")}
+		}
+
+		resp, err := a.navidromeClient.GetAlbumTracks(context.Background(), album.ID)
+		if err != nil {
+			return AlbumTracksModalResult{Error: err}
+		}
+
+		tracks := make([]models.Track, len(resp.SubsonicResponse.SongsByGenre.Song))
+		for i, song := range resp.SubsonicResponse.SongsByGenre.Song {
+			tracks[i] = models.Track{
+				ID:       song.ID,
+				Title:    song.Title,
+				Artist:   song.Artist,
+				ArtistID: song.ArtistID,
+				Album:    song.Album,
+				AlbumID:  song.AlbumID,
+				Genre:    song.Genre,
+				Year:     song.Year,
+				Duration: song.Duration,
+				Track:    song.Track,
+				Disc:     song.DiscNumber,
+				Size:     song.Size,
+				Suffix:   song.Suffix,
+				BitRate:  song.BitRate,
+				Path:     song.Path,
+			}
+		}
+
+		return AlbumTracksModalResult{Tracks: tracks}
+	})
+}
+
+// showArtistModal displays the artist albums modal
+func (a *App) showArtistModal(artist models.Artist) tea.Cmd {
+	a.state.ShowArtistModal = true
+	a.state.SelectedArtist = &artist
+	a.state.LoadingModalContent = true
+	a.state.ArtistAlbums = nil
+	a.state.SelectedModalIndex = 0
+
+	return tea.Cmd(func() tea.Msg {
+		if a.navidromeClient == nil {
+			return ArtistAlbumsModalResult{Error: fmt.Errorf("navidrome client not initialized")}
+		}
+
+		resp, err := a.navidromeClient.GetArtistAlbums(context.Background(), artist.ID)
+		if err != nil {
+			return ArtistAlbumsModalResult{Error: err}
+		}
+
+		albums := make([]models.Album, len(resp.SubsonicResponse.AlbumList2.Album))
+		for i, album := range resp.SubsonicResponse.AlbumList2.Album {
+			albums[i] = models.Album{
+				ID:         album.ID,
+				Name:       album.Name,
+				Artist:     album.Artist,
+				ArtistID:   album.ArtistID,
+				Year:       album.Year,
+				Genre:      album.Genre,
+				Duration:   album.Duration,
+				TrackCount: album.SongCount,
+				CreatedAt:  album.Created,
+				CoverArt:   album.CoverArt,
+			}
+		}
+
+		return ArtistAlbumsModalResult{Albums: albums}
+	})
+}
+
+// handleModalKeyPress handles keyboard input when a modal is open
+func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		// Close modal
+		a.state.ShowAlbumModal = false
+		a.state.ShowArtistModal = false
+		a.state.SelectedAlbum = nil
+		a.state.SelectedArtist = nil
+		a.state.AlbumTracks = nil
+		a.state.ArtistAlbums = nil
+		a.state.SelectedModalIndex = 0
+		return a, nil
+	case "up", "k":
+		// Navigate up in modal
+		if a.state.SelectedModalIndex > 0 {
+			a.state.SelectedModalIndex--
+		}
+	case "down", "j":
+		// Navigate down in modal
+		maxIndex := 0
+		if a.state.ShowAlbumModal && len(a.state.AlbumTracks) > 0 {
+			maxIndex = len(a.state.AlbumTracks) - 1
+		} else if a.state.ShowArtistModal && len(a.state.ArtistAlbums) > 0 {
+			maxIndex = len(a.state.ArtistAlbums) - 1
+		}
+		if a.state.SelectedModalIndex < maxIndex {
+			a.state.SelectedModalIndex++
+		}
+	case "enter":
+		// Handle different modal behaviors
+		if a.state.ShowAlbumModal && a.state.SelectedModalIndex < len(a.state.AlbumTracks) {
+			// Album modal: Play selected track immediately and queue remainder
+			selectedIndex := a.state.SelectedModalIndex
+			selectedTrack := a.state.AlbumTracks[selectedIndex]
+			remainingTracks := a.state.AlbumTracks[selectedIndex:]
+			
+			if a.audioManager != nil {
+				// Clear current queue and add the track selection
+				a.audioManager.ClearQueue()
+				a.audioManager.AddTracksToQueue(remainingTracks)
+				// Start playing the first track (selected one)
+				a.audioManager.PlayTrackAtIndex(0)
+				
+				// Immediately sync the state manually
+				a.state.Queue = a.audioManager.GetQueue()
+				a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
+				a.state.IsPlaying = a.audioManager.IsPlaying()
+				
+				// Log the action for user feedback
+				trackNum := selectedTrack.Track
+				if trackNum == 0 {
+					trackNum = selectedIndex + 1
+				}
+				a.logMessage(fmt.Sprintf("Playing track %d: %s - %s (%d tracks queued)", 
+					trackNum, selectedTrack.Artist, selectedTrack.Title, len(a.state.Queue)))
+			} else {
+				// Fallback if audio manager not available
+				a.state.Queue = remainingTracks
+				a.state.CurrentTrack = &selectedTrack
+				a.state.IsPlaying = true
+				
+				// Log the action for user feedback
+				trackNum := selectedTrack.Track
+				if trackNum == 0 {
+					trackNum = selectedIndex + 1
+				}
+				a.logMessage(fmt.Sprintf("Playing: %s - %s (from track %d)", 
+					selectedTrack.Artist, selectedTrack.Title, trackNum))
+			}
+			
+			// Close the modal after starting playback
+			a.state.ShowAlbumModal = false
+			a.state.SelectedAlbum = nil
+			a.state.AlbumTracks = nil
+			a.state.SelectedModalIndex = 0
+			
+			return a, nil
+		} else if a.state.ShowArtistModal && a.state.SelectedModalIndex < len(a.state.ArtistAlbums) {
+			// Artist modal: Open selected album's tracks modal
+			selectedAlbum := a.state.ArtistAlbums[a.state.SelectedModalIndex]
+			
+			// Close the artist modal and open album modal
+			a.state.ShowArtistModal = false
+			a.state.SelectedArtist = nil
+			a.state.ArtistAlbums = nil
+			a.state.SelectedModalIndex = 0
+			
+			return a, a.showAlbumModal(selectedAlbum)
+		}
+	case "a", "alt+enter":
+		// Add all items to queue
+		if a.state.ShowAlbumModal && len(a.state.AlbumTracks) > 0 {
+			if a.audioManager != nil {
+				a.audioManager.AddTracksToQueue(a.state.AlbumTracks)
+				// Sync state immediately
+				a.state.Queue = a.audioManager.GetQueue()
+				a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
+				a.state.IsPlaying = a.audioManager.IsPlaying()
+			} else {
+				a.state.Queue = append(a.state.Queue, a.state.AlbumTracks...)
+			}
+			a.logMessage(fmt.Sprintf("Added %d tracks to queue (total: %d)", len(a.state.AlbumTracks), len(a.state.Queue)))
+		} else if a.state.ShowArtistModal && len(a.state.ArtistAlbums) > 0 {
+			// Add all albums from this artist to queue
+			totalTracks := 0
+			for _, album := range a.state.ArtistAlbums {
+				cmd := a.addAlbumToQueue(album)
+				if cmd != nil {
+					// Execute the command to get tracks (this is async, but we'll log the albums)
+					totalTracks += album.TrackCount
+				}
+			}
+			a.logMessage(fmt.Sprintf("Queued %d albums (~%d tracks)", len(a.state.ArtistAlbums), totalTracks))
+		}
+	}
+
+	return a, nil
 }

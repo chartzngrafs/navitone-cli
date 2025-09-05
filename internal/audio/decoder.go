@@ -119,25 +119,50 @@ func (f *FLACReader) Read(p []byte) (n int, err error) {
 		}
 
 		// Convert frame to 16-bit PCM bytes
-		f.buffer = make([]byte, 0, len(frame.Subframes[0].Samples)*f.channels*2)
+		samplesPerFrame := len(frame.Subframes[0].Samples)
+		// Always output stereo (2 channels)
+		f.buffer = make([]byte, 0, samplesPerFrame*2*2) // samples * 2 channels * 2 bytes per sample
 		f.bufPos = 0
 
-		// Interleave channels properly
-		for i := 0; i < len(frame.Subframes[0].Samples); i++ {
-			for ch := 0; ch < f.channels && ch < len(frame.Subframes); ch++ {
-				sample := int16(frame.Subframes[ch].Samples[i])
-				// Convert to little endian bytes
-				f.buffer = append(f.buffer, byte(sample&0xFF), byte(sample>>8))
-			}
-			// If mono, duplicate to stereo
-			if f.channels == 1 {
-				sample := int16(frame.Subframes[0].Samples[i])
-				f.buffer = append(f.buffer, byte(sample&0xFF), byte(sample>>8))
+		// Process each sample in the frame
+		for i := 0; i < samplesPerFrame; i++ {
+			// Handle stereo or mono input
+			if f.channels >= 2 && len(frame.Subframes) >= 2 {
+				// Stereo input - use left and right channels
+				leftSample32 := frame.Subframes[0].Samples[i]
+				rightSample32 := frame.Subframes[1].Samples[i]
+				
+				// Convert int32 to int16 with proper clamping
+				leftSample16 := clampInt32ToInt16(leftSample32)
+				rightSample16 := clampInt32ToInt16(rightSample32)
+				
+				// Write left channel (little endian)
+				f.buffer = append(f.buffer, byte(leftSample16&0xFF), byte(leftSample16>>8))
+				// Write right channel (little endian)
+				f.buffer = append(f.buffer, byte(rightSample16&0xFF), byte(rightSample16>>8))
+			} else {
+				// Mono input - duplicate to stereo
+				sample32 := frame.Subframes[0].Samples[i]
+				sample16 := clampInt32ToInt16(sample32)
+				
+				// Write same sample to both left and right channels
+				f.buffer = append(f.buffer, byte(sample16&0xFF), byte(sample16>>8))
+				f.buffer = append(f.buffer, byte(sample16&0xFF), byte(sample16>>8))
 			}
 		}
 	}
 
 	return n, nil
+}
+
+// clampInt32ToInt16 properly converts int32 to int16 with clamping to prevent overflow
+func clampInt32ToInt16(sample32 int32) int16 {
+	if sample32 > 32767 {
+		return 32767
+	} else if sample32 < -32768 {
+		return -32768
+	}
+	return int16(sample32)
 }
 
 // OGGDecoder handles OGG Vorbis format
@@ -182,7 +207,7 @@ func (o *OGGReader) Read(p []byte) (n int, err error) {
 			continue
 		}
 
-		// Need to read more data - read in chunks that match our channel layout
+		// Need to read more data - read in chunks
 		samplesPerChannel := 1024
 		samples := make([]float32, samplesPerChannel*o.channels)
 		samplesRead, err := o.reader.Read(samples)
@@ -193,34 +218,55 @@ func (o *OGGReader) Read(p []byte) (n int, err error) {
 			return n, err
 		}
 
-		// Convert float32 samples to 16-bit PCM bytes
-		o.buffer = make([]byte, 0, samplesRead*2) // 2 bytes per sample
-		o.bufPos = 0
-
-		for i := 0; i < samplesRead; i++ {
-			// Convert float32 (-1.0 to 1.0) to int16
-			floatSample := samples[i] * 32767
-			// Clamp to prevent overflow
-			if floatSample > 32767 {
-				floatSample = 32767
-			} else if floatSample < -32768 {
-				floatSample = -32768
-			}
-			sample := int16(floatSample)
-			// Convert to little endian bytes
-			o.buffer = append(o.buffer, byte(sample&0xFF), byte(sample>>8))
+		if samplesRead == 0 {
+			continue
 		}
 
-		// If mono, duplicate to stereo
-		if o.channels == 1 {
-			originalLen := len(o.buffer)
-			for i := 0; i < originalLen; i += 2 {
-				o.buffer = append(o.buffer, o.buffer[i], o.buffer[i+1])
+		// Convert float32 samples to 16-bit PCM bytes
+		// Always output stereo (2 channels)
+		numSamplesPerChannel := samplesRead / o.channels
+		o.buffer = make([]byte, 0, numSamplesPerChannel*2*2) // samples * 2 channels * 2 bytes
+		o.bufPos = 0
+
+		for i := 0; i < numSamplesPerChannel; i++ {
+			if o.channels >= 2 {
+				// Stereo input - process left and right channels
+				leftFloat := samples[i*o.channels]
+				rightFloat := samples[i*o.channels+1]
+				
+				leftSample := clampFloat32ToInt16(leftFloat)
+				rightSample := clampFloat32ToInt16(rightFloat)
+				
+				// Write left channel (little endian)
+				o.buffer = append(o.buffer, byte(leftSample&0xFF), byte(leftSample>>8))
+				// Write right channel (little endian)
+				o.buffer = append(o.buffer, byte(rightSample&0xFF), byte(rightSample>>8))
+			} else {
+				// Mono input - duplicate to stereo
+				monoFloat := samples[i]
+				sample := clampFloat32ToInt16(monoFloat)
+				
+				// Write same sample to both left and right channels
+				o.buffer = append(o.buffer, byte(sample&0xFF), byte(sample>>8))
+				o.buffer = append(o.buffer, byte(sample&0xFF), byte(sample>>8))
 			}
 		}
 	}
 
 	return n, nil
+}
+
+// clampFloat32ToInt16 properly converts float32 to int16 with clamping to prevent overflow
+func clampFloat32ToInt16(floatSample float32) int16 {
+	// Convert float32 (-1.0 to 1.0) to int16
+	scaled := floatSample * 32767.0
+	// Clamp to prevent overflow
+	if scaled > 32767.0 {
+		return 32767
+	} else if scaled < -32768.0 {
+		return -32768
+	}
+	return int16(scaled)
 }
 
 // WAVDecoder handles WAV format
@@ -232,16 +278,11 @@ type WAVDecoder struct {
 
 func (d *WAVDecoder) Decode(r io.Reader) (io.Reader, error) {
 	// For WAV files, we need to parse the header and skip to the data
-	// For simplicity, let's assume WAV files are already in the correct format
-	// and just return the reader after skipping the header
-
-	// Note: This is a simplified implementation
-	// A full implementation would parse the WAV header properly
-	d.sampleRate = 44100 // Assume standard rate
-	d.channels = 2       // Assume stereo
-	d.duration = 0       // Unknown
-
-	return r, nil
+	// For now, return an error since WAV parsing is complex and can cause issues
+	return nil, fmt.Errorf("WAV format not properly supported yet - use MP3/FLAC/OGG instead")
+	
+	// Note: This is disabled to prevent static noise from malformed WAV handling
+	// A full implementation would parse the WAV header properly and validate format
 }
 
 func (d *WAVDecoder) SampleRate() int { return d.sampleRate }
