@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Tab represents different views in the application
 type Tab int
@@ -90,6 +93,13 @@ type Playlist struct {
 	ChangedAt time.Time `json:"changed"`
 }
 
+// SearchResults represents organized search results
+type SearchResults struct {
+	Artists []Artist
+	Albums  []Album
+	Tracks  []Track
+}
+
 // AppState represents the current state of the application
 type AppState struct {
 	CurrentTab    Tab
@@ -122,6 +132,7 @@ type AppState struct {
 	// Modal state
 	ShowAlbumModal      bool
 	ShowArtistModal     bool
+	ShowSearchModal     bool
 	SelectedAlbum       *Album
 	SelectedArtist      *Artist
 	AlbumTracks         []Track
@@ -129,16 +140,26 @@ type AppState struct {
 	SelectedModalIndex  int
 	LoadingModalContent bool
 	
+	// Search state
+	SearchQuery         string
+	SearchResults       SearchResults
+	LoadingSearchResults bool
+	SelectedSearchIndex int
+	
 	// Log state (for contained event logging)
 	LogMessages []string
 }
 
-// AddLogMessage adds a log message to the log buffer, keeping only the latest 2 messages
+// AddLogMessage adds a log message to the log buffer, keeping only the latest messages
 func (a *AppState) AddLogMessage(message string) {
-	a.LogMessages = append(a.LogMessages, message)
+	// Add timestamp prefix for better user experience
+	timestamp := time.Now().Format("15:04:05")
+	formattedMessage := fmt.Sprintf("[%s] %s", timestamp, message)
 	
-	// Keep only the latest 2 messages
-	if len(a.LogMessages) > 2 {
-		a.LogMessages = a.LogMessages[len(a.LogMessages)-2:]
+	a.LogMessages = append(a.LogMessages, formattedMessage)
+	
+	// Keep only the latest 10 messages (only 2 are shown, but we keep more for scroll-back potential)
+	if len(a.LogMessages) > 10 {
+		a.LogMessages = a.LogMessages[len(a.LogMessages)-10:]
 	}
 }

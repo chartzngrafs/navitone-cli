@@ -132,6 +132,9 @@ func (v *MainView) Render() string {
 	if v.state.ShowArtistModal {
 		return v.renderArtistModalOverlay(content)
 	}
+	if v.state.ShowSearchModal {
+		return v.renderSearchModalOverlay(content)
+	}
 
 	return content
 }
@@ -788,14 +791,28 @@ func (v *MainView) renderLogArea() string {
 		Width(v.width)
 
 	if len(v.state.LogMessages) == 0 {
-		// Show debug info when no log messages
-		return logStyle.Render("LOG AREA DEBUG: No messages yet. Try pressing SPACE or Alt+S to test keybindings.")
+		return logStyle.Render("Ready • Press SPACE to play/pause, Alt+S for shuffle, or navigate with Tab")
 	}
 
 	// Show up to 2 most recent log messages
 	var logLines []string
-	for _, msg := range v.state.LogMessages {
-		logLines = append(logLines, msg)
+	messageCount := len(v.state.LogMessages)
+	
+	if messageCount > 0 {
+		// Show the most recent messages (up to 2)
+		startIndex := 0
+		if messageCount > 2 {
+			startIndex = messageCount - 2
+		}
+		
+		for i := startIndex; i < messageCount; i++ {
+			msg := v.state.LogMessages[i]
+			// Truncate very long messages to fit nicely
+			if len(msg) > v.width-4 {
+				msg = msg[:v.width-7] + "..."
+			}
+			logLines = append(logLines, msg)
+		}
 	}
 	
 	// Pad to always show 2 lines for consistent layout
@@ -939,4 +956,124 @@ func (v *MainView) overlayModal(_ /* background */, modal string, modalWidth, mo
 	)
 	
 	return positionedModal
+}
+
+// renderSearchModalOverlay renders the search modal overlay
+func (v *MainView) renderSearchModalOverlay(background string) string {
+	var content strings.Builder
+	
+	// Modal header
+	content.WriteString("🔍 Global Search\n\n")
+	
+	// Search input box
+	content.WriteString(fmt.Sprintf("Search: %s█\n\n", v.state.SearchQuery))
+	
+	if v.state.LoadingSearchResults {
+		content.WriteString("Searching...")
+	} else if len(v.state.SearchQuery) == 0 {
+		content.WriteString("Type to search across artists, albums, and tracks\n")
+		content.WriteString("↑↓ Navigate • Enter to select • Esc to close")
+	} else {
+		results := v.state.SearchResults
+		
+		if len(results.Artists) == 0 && len(results.Albums) == 0 && len(results.Tracks) == 0 {
+			content.WriteString("No results found")
+		} else {
+			content.WriteString("↑↓ Navigate • Enter to select • Esc to close\n\n")
+			
+			currentIndex := 0
+			
+			// Artists section
+			if len(results.Artists) > 0 {
+				content.WriteString("🎤 Artists:\n")
+				for _, artist := range results.Artists {
+					selected := currentIndex == v.state.SelectedSearchIndex
+					line := v.formatSearchArtistLine(artist, selected)
+					content.WriteString(line)
+					content.WriteString("\n")
+					currentIndex++
+				}
+				content.WriteString("\n")
+			}
+			
+			// Albums section
+			if len(results.Albums) > 0 {
+				content.WriteString("💿 Albums:\n")
+				for _, album := range results.Albums {
+					selected := currentIndex == v.state.SelectedSearchIndex
+					line := v.formatSearchAlbumLine(album, selected)
+					content.WriteString(line)
+					content.WriteString("\n")
+					currentIndex++
+				}
+				content.WriteString("\n")
+			}
+			
+			// Tracks section
+			if len(results.Tracks) > 0 {
+				content.WriteString("🎵 Tracks:\n")
+				for _, track := range results.Tracks {
+					selected := currentIndex == v.state.SelectedSearchIndex
+					line := v.formatSearchTrackLine(track, selected)
+					content.WriteString(line)
+					content.WriteString("\n")
+					currentIndex++
+				}
+			}
+		}
+	}
+
+	// Center the modal overlay
+	return v.overlayModal(background, content.String(), 80, 25)
+}
+
+// formatSearchArtistLine formats an artist line for search results
+func (v *MainView) formatSearchArtistLine(artist models.Artist, selected bool) string {
+	starred := ""
+	if artist.StarredAt != nil {
+		starred = "★ "
+	}
+	
+	line := fmt.Sprintf("%s%s (%d albums)", starred, artist.Name, artist.AlbumCount)
+	
+	if selected {
+		return v.styles.ActiveField.Render("> " + line)
+	}
+	
+	return "  " + line
+}
+
+// formatSearchAlbumLine formats an album line for search results
+func (v *MainView) formatSearchAlbumLine(album models.Album, selected bool) string {
+	year := ""
+	if album.Year > 0 {
+		year = fmt.Sprintf("[%d] ", album.Year)
+	}
+	
+	line := fmt.Sprintf("%s%s - %s (%d tracks)", year, album.Artist, album.Name, album.TrackCount)
+	
+	if selected {
+		return v.styles.ActiveField.Render("> " + line)
+	}
+	
+	return "  " + line
+}
+
+// formatSearchTrackLine formats a track line for search results
+func (v *MainView) formatSearchTrackLine(track models.Track, selected bool) string {
+	// Format duration (seconds to mm:ss)
+	duration := ""
+	if track.Duration > 0 {
+		minutes := track.Duration / 60
+		seconds := track.Duration % 60
+		duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
+	}
+	
+	line := fmt.Sprintf("%s - %s (%s)%s", track.Artist, track.Title, track.Album, duration)
+	
+	if selected {
+		return v.styles.ActiveField.Render("> " + line)
+	}
+	
+	return "  " + line
 }

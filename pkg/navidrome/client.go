@@ -477,6 +477,47 @@ func (c *Client) CheckUserPermissions(ctx context.Context) error {
 	return nil
 }
 
+// Search performs a search across artists, albums, and songs
+func (c *Client) Search(ctx context.Context, query string, artistCount, albumCount, songCount int) (*SearchResponse, error) {
+	params := url.Values{}
+	params.Add("query", query)
+	
+	if artistCount > 0 {
+		params.Add("artistCount", fmt.Sprintf("%d", artistCount))
+	}
+	if albumCount > 0 {
+		params.Add("albumCount", fmt.Sprintf("%d", albumCount))
+	}
+	if songCount > 0 {
+		params.Add("songCount", fmt.Sprintf("%d", songCount))
+	}
+
+	resp, err := c.makeRequest(ctx, "search3", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading search response: %w", err)
+	}
+
+	var searchResp SearchResponse
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return nil, fmt.Errorf("parsing search response: %w", err)
+	}
+
+	if searchResp.SubsonicResponse.Status != "ok" {
+		if searchResp.SubsonicResponse.Error != nil {
+			return nil, fmt.Errorf("search error: %s", searchResp.SubsonicResponse.Error.Message)
+		}
+		return nil, fmt.Errorf("search failed with status: %s", searchResp.SubsonicResponse.Status)
+	}
+
+	return &searchResp, nil
+}
+
 // Scrobble submits a scrobble to the server
 func (c *Client) Scrobble(ctx context.Context, songID string, submission bool) error {
 	params := url.Values{}

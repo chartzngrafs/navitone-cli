@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
@@ -24,7 +23,6 @@ type App struct {
 	navidromeClient *navidrome.Client
 	audioManager    *audio.Manager
 	scrobbler       *scrobbling.Manager
-	debugFile       *os.File
 }
 
 // NewApp creates a new application instance
@@ -47,20 +45,10 @@ func NewApp() *App {
 		LogMessages: make([]string, 0),
 	}
 
-	// Create debug file in project directory
-	logPath := "/home/kevin/coding-playground/navitone-cli/navitone-debug.log"
-	debugFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		fmt.Printf("Warning: Could not create debug log file at %s: %v\n", logPath, err)
-		debugFile = nil
-	} else {
-		fmt.Printf("Debug log created at: %s\n", logPath)
-	}
 
 	app := &App{
-		state:     state,
-		view:      views.NewMainView(state),
-		debugFile: debugFile,
+		state: state,
+		view:  views.NewMainView(state),
 	}
 
 	// Initialize Navidrome client if config is valid
@@ -86,10 +74,7 @@ func NewApp() *App {
 		app.logMessage("Audio manager not initialized - Navidrome client is nil (check config)")
 	}
 
-	app.logMessage("=== NAVITONE STARTED ===")
-	app.logMessage("Debug logging enabled")
-	app.logMessage(fmt.Sprintf("Audio manager: %v", app.audioManager != nil))
-	app.logMessage(fmt.Sprintf("Navidrome client: %v", app.navidromeClient != nil))
+	app.logMessage("Navitone started successfully")
 	
 	return app
 }
@@ -115,27 +100,15 @@ func (a *App) updateAudioState(state *models.AppState) {
 	}
 }
 
-// logMessage adds a message to the app's log area and debug file
+// logMessage adds a message to the app's log area
 func (a *App) logMessage(message string) {
 	a.state.AddLogMessage(message)
-	
-	// Also write to debug file with timestamp
-	if a.debugFile != nil {
-		timestamp := time.Now().Format("15:04:05.000")
-		fmt.Fprintf(a.debugFile, "[%s] %s\n", timestamp, message)
-		a.debugFile.Sync() // Force flush to disk
-	}
 }
 
 // cleanup handles graceful shutdown of all resources
 func (a *App) cleanup() tea.Cmd {
-	a.logMessage("=== NAVITONE SHUTTING DOWN ===")
 	if a.audioManager != nil {
-		a.logMessage("Shutting down audio manager...")
 		a.audioManager.Close()
-	}
-	if a.debugFile != nil {
-		a.debugFile.Close()
 	}
 	return tea.Quit
 }
@@ -150,7 +123,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle modal navigation first
-		if a.state.ShowAlbumModal || a.state.ShowArtistModal {
+		if a.state.ShowAlbumModal || a.state.ShowArtistModal || a.state.ShowSearchModal {
 			return a.handleModalKeyPress(msg)
 		}
 		return a.handleKeyPress(msg)
@@ -259,6 +232,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.LoadingError = ""
 		}
 		return a, nil
+	case SearchResult:
+		// Handle search result
+		a.state.LoadingSearchResults = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			a.state.SearchResults = msg.Results
+			a.state.SelectedSearchIndex = 0
+			a.state.LoadingError = ""
+		}
+		return a, nil
 	}
 
 	return a, nil
@@ -271,53 +255,23 @@ func (a *App) View() string {
 
 // handleKeyPress processes keyboard input
 func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Debug: Log all key presses
-	keyStr := msg.String()
-	if keyStr != "" && keyStr != "ctrl+c" && keyStr != "q" {
-		a.logMessage(fmt.Sprintf("Key pressed: '%s'", keyStr))
-	}
-	
 	// Handle global player controls FIRST (before tab-specific handlers)
 	switch msg.String() {
 	case " ":
 		// Global: Space bar Play/Pause toggle
-		a.logMessage("=== SPACE KEY DEBUG ===")
-		a.logMessage(fmt.Sprintf("Audio manager exists: %v", a.audioManager != nil))
-		a.logMessage(fmt.Sprintf("Queue size: %d", len(a.state.Queue)))
-		a.logMessage(fmt.Sprintf("Current track exists: %v", a.state.CurrentTrack != nil))
-		a.logMessage(fmt.Sprintf("IsPlaying before: %v", a.state.IsPlaying))
-		
 		if a.audioManager != nil {
-			// Get more detailed state from audio manager
-			currentIndex := a.audioManager.GetCurrentIndex()
-			queue := a.audioManager.GetQueue()
-			a.logMessage(fmt.Sprintf("Audio manager - CurrentIndex: %d, Queue len: %d", currentIndex, len(queue)))
-			
-			if len(queue) == 0 {
-				a.logMessage("ERROR: No tracks in audio manager queue - cannot play/pause")
-				return a, nil
-			}
-			
 			err := a.audioManager.TogglePlayPause()
 			if err != nil {
-				a.logMessage(fmt.Sprintf("TogglePlayPause ERROR: %v", err))
-			} else {
-				a.logMessage("TogglePlayPause called successfully")
+				a.logMessage(fmt.Sprintf("Play/Pause error: %v", err))
 			}
-			
 			// Force immediate state sync
 			a.updateAudioState(a.state)
-			a.logMessage(fmt.Sprintf("IsPlaying after: %v", a.state.IsPlaying))
 		} else {
-			a.logMessage("WARNING: Audio manager is nil - using fallback")
 			a.state.IsPlaying = !a.state.IsPlaying
 		}
-		a.logMessage("=== END SPACE DEBUG ===")
 		return a, nil
 	case "alt+right":
 		// Global: Alt+Right arrow - Next track
-		a.logMessage(fmt.Sprintf("Alt+Right pressed - next track (shuffle: %v, queue: %d)", 
-			a.state.IsShuffleMode, len(a.state.Queue)))
 		if a.audioManager != nil {
 			err := a.audioManager.NextTrack()
 			if err != nil {
@@ -327,8 +281,6 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "alt+left":
 		// Global: Alt+Left arrow - Previous track
-		a.logMessage(fmt.Sprintf("Alt+Left pressed - previous track (shuffle: %v, queue: %d)", 
-			a.state.IsShuffleMode, len(a.state.Queue)))
 		if a.audioManager != nil {
 			err := a.audioManager.PreviousTrack()
 			if err != nil {
@@ -338,20 +290,17 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "alt+s":
 		// Global: Alt+S - Toggle shuffle
-		a.logMessage("Alt+S pressed - toggle shuffle")
 		if a.audioManager != nil {
 			a.audioManager.ToggleShuffle()
 			// Force immediate state sync
 			a.updateAudioState(a.state)
-			a.logMessage(fmt.Sprintf("Shuffle toggled - IsShuffleMode: %v", a.state.IsShuffleMode))
+			a.logMessage(fmt.Sprintf("Shuffle %s", map[bool]string{true: "enabled", false: "disabled"}[a.state.IsShuffleMode]))
 		} else {
 			a.state.IsShuffleMode = !a.state.IsShuffleMode
-			a.logMessage(fmt.Sprintf("Fallback shuffle toggle - IsShuffleMode: %v", a.state.IsShuffleMode))
 		}
 		return a, nil
 	case "right":
 		// Global: Right arrow - Seek forward (scrub)
-		a.logMessage("Right arrow - seek forward 10 seconds")
 		if a.audioManager != nil {
 			err := a.audioManager.SeekForward(10) // 10 seconds forward
 			if err != nil {
@@ -361,7 +310,6 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "left":
 		// Global: Left arrow - Seek backward (scrub)
-		a.logMessage("Left arrow - seek backward 10 seconds")
 		if a.audioManager != nil {
 			err := a.audioManager.SeekBackward(10) // 10 seconds backward
 			if err != nil {
@@ -378,7 +326,6 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				newVolume = 1.0
 			}
 			a.audioManager.SetVolume(newVolume)
-			a.logMessage(fmt.Sprintf("Volume up: %.0f%%", newVolume*100))
 		}
 		return a, nil
 	case "shift+down":
@@ -390,7 +337,6 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				newVolume = 0.0
 			}
 			a.audioManager.SetVolume(newVolume)
-			a.logMessage(fmt.Sprintf("Volume down: %.0f%%", newVolume*100))
 		}
 		return a, nil
 	}
@@ -415,6 +361,14 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "shift+s", "S":
+		// Global: Shift+S - Open search modal
+		a.state.ShowSearchModal = true
+		a.state.SearchQuery = ""
+		a.state.SearchResults = models.SearchResults{}
+		a.state.SelectedSearchIndex = 0
+		a.state.LoadingSearchResults = false
+		return a, nil
 	case "ctrl+c", "q":
 		return a, a.cleanup()
 	case "tab":
@@ -702,8 +656,6 @@ func (a *App) handleTabChange() tea.Cmd {
 
 // handleAlbumsKeyPress handles keyboard input for the albums tab
 func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Debug: log the key that was pressed
-	// a.logMessage(fmt.Sprintf("Albums tab key: '%s'", msg.String()))
 	
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -1112,6 +1064,11 @@ type ArtistAlbumsModalResult struct {
 	Error  error
 }
 
+type SearchResult struct {
+	Results models.SearchResults
+	Error   error
+}
+
 
 // handleMouseEvent processes mouse input
 func (a *App) handleMouseEvent(_ tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -1216,6 +1173,11 @@ func (a *App) showArtistModal(artist models.Artist) tea.Cmd {
 
 // handleModalKeyPress handles keyboard input when a modal is open
 func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle search modal first
+	if a.state.ShowSearchModal {
+		return a.handleSearchModalKeyPress(msg)
+	}
+	
 	switch msg.String() {
 	case "esc", "q":
 		// Close modal
@@ -1331,5 +1293,165 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	return a, nil
+}
+
+// handleSearchModalKeyPress handles keyboard input in the search modal
+func (a *App) handleSearchModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		// Close search modal
+		a.state.ShowSearchModal = false
+		a.state.SearchQuery = ""
+		a.state.SearchResults = models.SearchResults{}
+		a.state.SelectedSearchIndex = 0
+		a.state.LoadingSearchResults = false
+		return a, nil
+	case "enter":
+		// Handle search result selection
+		return a.handleSearchSelection()
+	case "up":
+		// Navigate up in search results
+		if a.state.SelectedSearchIndex > 0 {
+			a.state.SelectedSearchIndex--
+		}
+		return a, nil
+	case "down":
+		// Navigate down in search results
+		totalResults := len(a.state.SearchResults.Artists) + len(a.state.SearchResults.Albums) + len(a.state.SearchResults.Tracks)
+		if a.state.SelectedSearchIndex < totalResults-1 {
+			a.state.SelectedSearchIndex++
+		}
+		return a, nil
+	case "backspace":
+		// Remove character from search query
+		if len(a.state.SearchQuery) > 0 {
+			a.state.SearchQuery = a.state.SearchQuery[:len(a.state.SearchQuery)-1]
+			return a, a.performSearch()
+		}
+		return a, nil
+	default:
+		// Add character to search query
+		if len(msg.String()) == 1 {
+			a.state.SearchQuery += msg.String()
+			return a, a.performSearch()
+		}
+	}
+	return a, nil
+}
+
+// performSearch performs the actual search with a timeout
+func (a *App) performSearch() tea.Cmd {
+	if a.navidromeClient == nil || len(a.state.SearchQuery) == 0 {
+		// Clear results if no query
+		a.state.SearchResults = models.SearchResults{}
+		a.state.LoadingSearchResults = false
+		return nil
+	}
+
+	query := a.state.SearchQuery
+	a.state.LoadingSearchResults = true
+
+	return tea.Cmd(func() tea.Msg {
+		// Add a small delay to allow for more typing (debounce)
+		time.Sleep(300 * time.Millisecond)
+		
+		// Check if query has changed (debounce logic)
+		if query != a.state.SearchQuery {
+			return SearchResult{Results: models.SearchResults{}, Error: nil}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		resp, err := a.navidromeClient.Search(ctx, query, 10, 10, 20) // 10 artists, 10 albums, 20 tracks
+		if err != nil {
+			return SearchResult{Error: err}
+		}
+
+		// Convert Navidrome search results to our models
+		results := models.SearchResults{
+			Artists: make([]models.Artist, len(resp.SubsonicResponse.SearchResult3.Artist)),
+			Albums:  make([]models.Album, len(resp.SubsonicResponse.SearchResult3.Album)),
+			Tracks:  make([]models.Track, len(resp.SubsonicResponse.SearchResult3.Song)),
+		}
+
+		// Convert artists
+		for i, artist := range resp.SubsonicResponse.SearchResult3.Artist {
+			results.Artists[i] = models.Artist{
+				ID:         artist.ID,
+				Name:       artist.Name,
+				AlbumCount: artist.AlbumCount,
+				StarredAt:  artist.Starred,
+			}
+		}
+
+		// Convert albums
+		for i, album := range resp.SubsonicResponse.SearchResult3.Album {
+			results.Albums[i] = models.Album{
+				ID:         album.ID,
+				Name:       album.Name,
+				Artist:     album.Artist,
+				ArtistID:   album.ArtistID,
+				Year:       album.Year,
+				Genre:      album.Genre,
+				Duration:   album.Duration,
+				TrackCount: album.SongCount,
+				CreatedAt:  album.Created,
+				CoverArt:   album.CoverArt,
+			}
+		}
+
+		// Convert tracks
+		for i, song := range resp.SubsonicResponse.SearchResult3.Song {
+			results.Tracks[i] = models.Track{
+				ID:       song.ID,
+				Title:    song.Title,
+				Artist:   song.Artist,
+				ArtistID: song.ArtistID,
+				Album:    song.Album,
+				AlbumID:  song.AlbumID,
+				Genre:    song.Genre,
+				Year:     song.Year,
+				Duration: song.Duration,
+				Track:    song.Track,
+				Disc:     song.DiscNumber,
+				Size:     song.Size,
+				Suffix:   song.Suffix,
+				BitRate:  song.BitRate,
+				Path:     song.Path,
+			}
+		}
+
+		return SearchResult{Results: results, Error: nil}
+	})
+}
+
+// handleSearchSelection handles when a search result is selected
+func (a *App) handleSearchSelection() (tea.Model, tea.Cmd) {
+	totalArtists := len(a.state.SearchResults.Artists)
+	totalAlbums := len(a.state.SearchResults.Albums)
+	
+	if a.state.SelectedSearchIndex < totalArtists {
+		// Selected an artist - show artist modal
+		artist := a.state.SearchResults.Artists[a.state.SelectedSearchIndex]
+		a.state.ShowSearchModal = false
+		return a, a.showArtistModal(artist)
+	} else if a.state.SelectedSearchIndex < totalArtists+totalAlbums {
+		// Selected an album - show album modal
+		albumIndex := a.state.SelectedSearchIndex - totalArtists
+		album := a.state.SearchResults.Albums[albumIndex]
+		a.state.ShowSearchModal = false
+		return a, a.showAlbumModal(album)
+	} else {
+		// Selected a track - add to queue
+		trackIndex := a.state.SelectedSearchIndex - totalArtists - totalAlbums
+		if trackIndex < len(a.state.SearchResults.Tracks) {
+			track := a.state.SearchResults.Tracks[trackIndex]
+			a.state.ShowSearchModal = false
+			return a, a.addTrackToQueue(track)
+		}
+	}
+	
 	return a, nil
 }
