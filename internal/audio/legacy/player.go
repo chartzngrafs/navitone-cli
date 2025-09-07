@@ -53,6 +53,7 @@ type Player struct {
 	volume     float64
 	position   time.Duration
 	duration   time.Duration
+	byteOffset int64  // HTTP Range byte offset for seeking
 
 	// Control channels
 	stopCh   chan struct{}
@@ -62,6 +63,9 @@ type Player struct {
 	// Event callback
 	eventCallback func(PlaybackEvent)
 
+
+	// Position offset for seeking simulation
+	positionOffset time.Duration
 
 	// Synchronization
 	mu sync.RWMutex
@@ -116,9 +120,13 @@ func (p *Player) PlayWithFormat(streamURL, trackID, formatHint string) error {
 
 // PlayWithFormatAndDuration starts playing a track with format hint and duration
 func (p *Player) PlayWithFormatAndDuration(streamURL, trackID, formatHint string, duration time.Duration) error {
+	return p.PlayWithRange(streamURL, trackID, formatHint, duration, 0)
+}
+
+// PlayWithRange starts playing a track from a specific byte offset using HTTP Range headers
+func (p *Player) PlayWithRange(streamURL, trackID, formatHint string, duration time.Duration, byteOffset int64) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
 
 	// Stop current playback if any
 	if p.state == StatePlaying || p.state == StatePaused {
@@ -129,6 +137,8 @@ func (p *Player) PlayWithFormatAndDuration(streamURL, trackID, formatHint string
 	p.currentID = trackID
 	p.position = 0
 	p.duration = duration
+	p.byteOffset = byteOffset  // Store byte offset for range requests
+	p.positionOffset = 0       // Reset position offset for new track
 
 	// Store format hint for playback loop
 	p.formatHint = formatHint
@@ -148,12 +158,10 @@ func (p *Player) Pause() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.state == StatePlaying {
+	if p.state == StatePlaying && p.player != nil {
 		p.state = StatePaused
-		select {
-		case p.pauseCh <- struct{}{}:
-		default:
-		}
+		// Directly pause the oto player
+		p.player.Pause()
 		p.emitEvent("paused", p.currentID, p.position, p.duration)
 	}
 }
@@ -163,12 +171,10 @@ func (p *Player) Resume() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.state == StatePaused {
+	if p.state == StatePaused && p.player != nil {
 		p.state = StatePlaying
-		select {
-		case p.resumeCh <- struct{}{}:
-		default:
-		}
+		// Directly resume the oto player
+		p.player.Play()
 		p.emitEvent("resumed", p.currentID, p.position, p.duration)
 	}
 }
@@ -236,6 +242,13 @@ func (p *Player) SetEventCallback(callback func(PlaybackEvent)) {
 	p.eventCallback = callback
 }
 
+// AdjustPositionOffset adjusts the position offset for simulated seeking
+func (p *Player) AdjustPositionOffset(offset time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.positionOffset += offset
+}
+
 // Close closes the audio player and releases resources
 func (p *Player) Close() error {
 	p.Stop()
@@ -244,6 +257,75 @@ func (p *Player) Close() error {
 	if p.context != nil {
 		p.context.Suspend()
 	}
+	return nil
+}
+
+// SeekForward seeks forward by the specified duration
+func (p *Player) SeekForward(duration time.Duration) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	if p.state != StatePlaying && p.state != StatePaused {
+		return fmt.Errorf("no track currently playing")
+	}
+	
+	// For now, seeking with streaming audio requires restarting playback
+	// This is a limitation of the current implementation 
+	newPosition := p.position + duration
+	if newPosition >= p.duration && p.duration > 0 {
+		newPosition = p.duration - time.Second // Stop 1 second before end
+	}
+	
+	return p.seekToPosition(newPosition)
+}
+
+// SeekBackward seeks backward by the specified duration  
+func (p *Player) SeekBackward(duration time.Duration) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	if p.state != StatePlaying && p.state != StatePaused {
+		return fmt.Errorf("no track currently playing")
+	}
+	
+	newPosition := p.position - duration
+	if newPosition < 0 {
+		newPosition = 0
+	}
+	
+	return p.seekToPosition(newPosition)
+}
+
+// seekToPosition seeks to a specific position (must be called with lock held)
+func (p *Player) seekToPosition(position time.Duration) error {
+	if position < 0 {
+		position = 0
+	}
+	if p.duration > 0 && position > p.duration {
+		position = p.duration
+	}
+	
+	// For streaming audio, we restart playback from the desired position
+	// This works by requesting a new stream with a time offset
+	offsetSeconds := int(position.Seconds())
+	
+	// Stop current playback
+	wasPlaying := p.state == StatePlaying
+	p.stopPlayback()
+	
+	// Create new stream URL with time offset  
+	// We need access to navidrome client for this, so this is a limitation
+	// For now, just update position and emit event
+	p.position = position
+	p.emitEvent("seek", p.currentID, p.position, p.duration)
+	
+	// If we were playing, we should restart playback from the new position
+	// This requires coordination with the audio manager
+	if wasPlaying {
+		// Signal that seeking occurred and we need to restart
+		return fmt.Errorf("seek to %d seconds - requires playback restart", offsetSeconds)
+	}
+	
 	return nil
 }
 
@@ -286,7 +368,10 @@ func (p *Player) playbackLoop() {
 		return
 	}
 
-	// Add range header to support seeking (if needed in the future)
+	// Add range header for seeking if byte offset is specified
+	if p.byteOffset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", p.byteOffset))
+	}
 	req.Header.Set("User-Agent", "navitone-cli/1.0")
 
 	// Use a client with no timeout for streaming (different from the default httpClient)
@@ -394,22 +479,17 @@ func (p *Player) playbackLoop() {
 			return
 
 		case <-p.pauseCh:
-			p.player.Pause()
-			pauseStart := time.Now()
-
-			// Wait for resume or stop
-			select {
-			case <-p.resumeCh:
-				p.player.Play()
-				pausedDuration += time.Since(pauseStart)
-			case <-p.stopCh:
-				return
-			}
+			// Pause handling is now done directly in Pause() method
+			continue
+		
+		case <-p.resumeCh:
+			// Resume handling is now done directly in Resume() method
+			continue
 
 		case <-ticker.C:
 			if p.GetState() == StatePlaying {
 				p.mu.Lock()
-				p.position = time.Since(startTime) - pausedDuration
+				p.position = time.Since(startTime) - pausedDuration + p.positionOffset
 				p.mu.Unlock()
 
 				p.emitEvent("position_update", p.currentID, p.position, p.duration)

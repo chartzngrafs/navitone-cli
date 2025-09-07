@@ -70,7 +70,7 @@ func DefaultConfig() *Config {
 		},
 		Audio: AudioConfig{
 			Device:     "", // Auto-detect
-			Volume:     70,
+			Volume:     100,
 			BufferSize: 4096,
 		},
 		UI: UIConfig{
@@ -81,10 +81,15 @@ func DefaultConfig() *Config {
 				"quit":       "ctrl+c,q",
 				"next_tab":   "tab",
 				"prev_tab":   "shift+tab",
-				"help":       "f1,?",
 				"play_pause": "space",
-				"next_track": "ctrl+n",
-				"prev_track": "ctrl+p",
+				"next_track": "alt+right",
+				"prev_track": "alt+left",
+				"volume_up":  "shift+up",
+				"volume_down": "shift+down",
+				"seek_forward": "right",
+				"seek_backward": "left",
+				"toggle_shuffle": "alt+s",
+				"stop": "ctrl+s",
 			},
 		},
 		Scrobbling: ScrobblingConfig{

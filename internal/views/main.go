@@ -117,13 +117,12 @@ func (v *MainView) Render() string {
 	// Footer with playback controls
 	sections = append(sections, v.renderFooter())
 	
+	// Player module above log
+	sections = append(sections, v.renderPlayer())
+	
 	// Log area at the bottom
 	sections = append(sections, v.renderLogArea())
 
-	// Help overlay if active
-	if v.state.ShowHelp {
-		return v.renderHelpOverlay(strings.Join(sections, "\n"))
-	}
 
 	// Modal overlays if active
 	content := strings.Join(sections, "\n")
@@ -155,7 +154,7 @@ func (v *MainView) renderHeader() string {
 
 // renderContent creates the main content area based on current tab
 func (v *MainView) renderContent() string {
-	contentHeight := v.height - 6 // Account for header, footer, and log area
+	contentHeight := v.height - 8 // Account for header, footer, player, and log area plus padding
 	content := v.styles.Content.
 		Width(v.width - 2).
 		Height(contentHeight)
@@ -180,27 +179,10 @@ func (v *MainView) renderContent() string {
 	}
 }
 
-// renderFooter creates the footer with playback controls
+// renderFooter creates a simple footer with basic info (player module handles playback details)
 func (v *MainView) renderFooter() string {
-	var parts []string
-
-	if v.state.CurrentTrack != nil {
-		parts = append(parts, fmt.Sprintf("♪ %s - %s", 
-			v.state.CurrentTrack.Artist, v.state.CurrentTrack.Title))
-	} else {
-		parts = append(parts, "♪ No track playing")
-	}
-
-	if v.state.IsPlaying {
-		parts = append(parts, "▶")
-	} else {
-		parts = append(parts, "⏸")
-	}
-
-	parts = append(parts, fmt.Sprintf("Vol: %d%%", v.state.Volume))
-	parts = append(parts, fmt.Sprintf("Queue: %d", len(v.state.Queue)))
-
-	footer := strings.Join(parts, " | ")
+	// Simple footer with just navigation hints since player module handles playback
+	footer := "Tab/Shift+Tab: Switch tabs | Ctrl+C/q: Quit"
 	return v.styles.Footer.Width(v.width).Render(footer)
 }
 
@@ -293,7 +275,7 @@ func (v *MainView) renderHomeTab() string {
 	}
 	
 	// Navigation hint
-	content.WriteString("💡 Navigate with Tab/Shift+Tab • F1/? for help")
+	content.WriteString("💡 Navigate with Tab/Shift+Tab • See keybinds below")
 	
 	return content.String()
 }
@@ -719,107 +701,82 @@ func (v *MainView) renderConfigField(field models.ConfigFormField, cf *models.Co
 	return v.styles.InactiveField.Render(line)
 }
 
-// renderHelpOverlay creates the context-aware help overlay
-func (v *MainView) renderHelpOverlay(background string) string {
-	helpContent := v.getContextualHelp()
-	
-	help := v.styles.Help.
-		Width(60).
-		Height(20).
-		Render(helpContent)
-	
-	// Center the help overlay
-	x := (v.width - 60) / 2
-	y := (v.height - 20) / 2
-	
-	// Simple overlay positioning (could be enhanced)
-	lines := strings.Split(background, "\n")
-	helpLines := strings.Split(help, "\n")
-	
-	for i, helpLine := range helpLines {
-		if y+i < len(lines) && y+i >= 0 {
-			line := lines[y+i]
-			if x >= 0 && x+len(helpLine) <= len(line) {
-				lines[y+i] = line[:x] + helpLine + line[x+len(helpLine):]
-			}
-		}
-	}
-	
-	return strings.Join(lines, "\n")
-}
 
-// getContextualHelp returns help content based on current context
-func (v *MainView) getContextualHelp() string {
-	help := "NAVITONE-CLI HELP\n\n"
-	
-	// Check if we're in a modal first
-	if v.state.ShowAlbumModal {
-		help += "Album Tracks Modal:\n"
-		help += "↑↓ / j/k       - Navigate tracks\n"
-		help += "Enter          - Play track & queue remainder\n"
-		help += "A              - Add all tracks to queue\n"
-		help += "Esc / q        - Close modal\n\n"
-	} else if v.state.ShowArtistModal {
-		help += "Artist Albums Modal:\n"
-		help += "↑↓ / j/k       - Navigate albums\n"
-		help += "Enter          - View album tracks (modal)\n"
-		help += "A / Alt+Enter  - Add all albums to queue\n"
-		help += "Esc / q        - Close modal\n\n"
+// renderPlayer creates the persistent player module
+func (v *MainView) renderPlayer() string {
+	playerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("255")).
+		Background(lipgloss.Color("24")).
+		Padding(0, 1).
+		Width(v.width).
+		Bold(true)
+
+	if v.state.CurrentTrack == nil {
+		// Show empty player with current state
+		var status []string
+		
+		if v.state.IsPlaying {
+			status = append(status, "▶ Playing")
+		} else {
+			status = append(status, "⏸ Stopped")
+		}
+		
+		status = append(status, fmt.Sprintf("Vol: %d%%", v.state.Volume))
+		status = append(status, fmt.Sprintf("Queue: %d", len(v.state.Queue)))
+		
+		if v.state.IsShuffleMode {
+			status = append(status, "🔀 SHUFFLE ON")
+		} else {
+			status = append(status, "🔀 Shuffle off")
+		}
+		
+		statusStr := strings.Join(status, " | ")
+		playerContent := fmt.Sprintf("♪ No track loaded | %s\nSPACE: Play/Pause | Alt+←/→: Skip | Alt+S: Shuffle | Shift+↑/↓: Volume", statusStr)
+		return playerStyle.Render(playerContent)
 	}
-	
-	// Global shortcuts (always shown)
-	help += "Global Navigation:\n"
-	help += "Tab/Shift+Tab  - Switch tabs\n"
-	help += "F1 / ?         - Toggle this help\n"
-	help += "Ctrl+C / q     - Quit application\n\n"
-	
-	// Global playback controls (always shown)
-	help += "Playback Controls:\n"
-	help += "Ctrl+P         - Play/Pause\n"
-	help += "Ctrl+N         - Next track\n"
-	help += "Ctrl+B         - Previous track\n"
-	help += "Ctrl+S         - Stop\n\n"
-	
-	// Tab-specific shortcuts
-	switch v.state.CurrentTab {
-	case models.HomeTab:
-		help += "Home Tab:\n"
-		help += "View library overview and recently added content\n"
-	case models.AlbumsTab:
-		help += "Albums Tab:\n"
-		help += "↑↓ / j/k       - Navigate albums\n"
-		help += "Enter          - View album tracks (modal)\n"
-		help += "Alt+Enter/A    - Queue entire album\n"
-		help += "R              - Refresh albums list\n"
-	case models.ArtistsTab:
-		help += "Artists Tab:\n"
-		help += "↑↓ / j/k       - Navigate artists\n"
-		help += "Enter          - View artist albums (modal)\n"
-		help += "R              - Refresh artists list\n"
-	case models.TracksTab:
-		help += "Tracks Tab:\n"
-		help += "↑↓ / j/k       - Navigate tracks\n"
-		help += "Enter          - Add track to queue\n"
-		help += "R              - Refresh tracks list\n"
-	case models.QueueTab:
-		help += "Queue Tab:\n"
-		help += "↑↓ / j/k       - Navigate queue\n"
-		help += "Enter/Space    - Play selected track\n"
-		help += "Del / X        - Remove selected track\n"
-		help += "C              - Clear entire queue\n"
-	case models.ConfigTab:
-		help += "Config Tab:\n"
-		help += "↑↓ / j/k       - Navigate fields\n"
-		help += "Enter          - Edit field / toggle checkbox\n"
-		help += "F2             - Save configuration\n"
-		help += "F3             - Test Navidrome connection\n"
-	case models.PlaylistsTab:
-		help += "Playlists Tab:\n"
-		help += "(Coming soon - playlist management)\n"
+
+	var parts []string
+
+	// Current track info
+	trackInfo := fmt.Sprintf("♪ %s - %s", v.state.CurrentTrack.Artist, v.state.CurrentTrack.Title)
+	if v.state.CurrentTrack.Album != "" {
+		trackInfo += fmt.Sprintf(" (%s)", v.state.CurrentTrack.Album)
 	}
-	
-	help += "\nPress F1 or ? to close help"
-	return help
+	parts = append(parts, trackInfo)
+
+	// Playback status and controls
+	var controls []string
+	if v.state.IsPlaying {
+		controls = append(controls, "▶ Playing")
+	} else {
+		controls = append(controls, "⏸ Paused")
+	}
+
+	// Volume
+	controls = append(controls, fmt.Sprintf("Vol: %d%%", v.state.Volume))
+
+	// Queue info
+	controls = append(controls, fmt.Sprintf("Queue: %d", len(v.state.Queue)))
+
+	// Shuffle indicator
+	if v.state.IsShuffleMode {
+		controls = append(controls, "🔀 Shuffle")
+	}
+
+	// Progress bar placeholder (for now, we'll show a simple indicator)
+	if v.state.CurrentTrack.Duration > 0 {
+		// TODO: Add actual position tracking
+		controls = append(controls, "[▓▓▓▓░░░░░░]")
+	}
+
+	controlStr := strings.Join(controls, " | ")
+	parts = append(parts, controlStr)
+
+	// Keybindings hint
+	parts = append(parts, "SPACE: Play/Pause | Alt+←/→: Skip | Alt+S: Shuffle | ←/→: Scrub | Shift+↑/↓: Volume")
+
+	playerContent := strings.Join(parts, "\n")
+	return playerStyle.Render(playerContent)
 }
 
 // renderLogArea creates the log area at the bottom showing recent events
@@ -831,8 +788,8 @@ func (v *MainView) renderLogArea() string {
 		Width(v.width)
 
 	if len(v.state.LogMessages) == 0 {
-		// Show empty log area to maintain consistent layout
-		return logStyle.Render("")
+		// Show debug info when no log messages
+		return logStyle.Render("LOG AREA DEBUG: No messages yet. Try pressing SPACE or Alt+S to test keybindings.")
 	}
 
 	// Show up to 2 most recent log messages

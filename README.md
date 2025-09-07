@@ -1,40 +1,35 @@
 # Navitone-CLI
 
-A modern terminal-based music player for Navidrome with intuitive UI, comprehensive scrobbling support, and robust audio playback capabilities.
+A modern terminal-based music player for Navidrome with intuitive UI, comprehensive scrobbling support, and robust MPV-powered audio playback.
 
 ## 🎵 Overview
 
-Navitone-CLI brings the convenience of a graphical music player to the terminal, designed with the philosophy that terminal interfaces should be as intuitive as their GUI counterparts. Think Spotify or Feishin, but optimized for terminal use with sensible keybindings and a context-aware help system.
+Navitone-CLI brings the convenience of a graphical music player to the terminal, designed with the philosophy that terminal interfaces should be as intuitive as their GUI counterparts. Think Spotify or Feishin, but optimized for terminal use with sensible keybindings and context-aware navigation.
 
 ## ✨ Key Features
 
 - **Intuitive TUI Interface** - Tab-based navigation with visual styling
-- **Navidrome Integration** - Full API support for streaming and library management
-- **Comprehensive Scrobbling** - Last.fm and ListenBrainz support with offline queuing
-- **Smart Navigation** - Context-aware help system and logical keybindings
-- **Audio Excellence** - Multi-format audio playback (FLAC, MP3, OGG, WAV) with Oto audio library
-- **Queue Management** - Full queue controls: add, remove, clear, reorder, play/pause
+- **Navidrome Integration** - Full API support for streaming and library management  
+- **MPV-Powered Audio** - Professional audio playback with universal format support
+- **Smart Navigation** - Modal-based browsing with intuitive keybindings
+- **Queue Management** - Complete playback controls with smart queue management
+- **Scrobbling Support** - Last.fm and ListenBrainz integration with offline queuing
 
 ## 🚀 Current Status
 
-### ✅ Implemented
-- **Core Architecture** - MVC pattern with clean separation of concerns
+### ✅ Fully Implemented
+- **MPV Audio Backend** - Professional-grade audio with universal format support and perfect seeking
+- **Core Architecture** - MVC pattern with clean separation of concerns  
 - **Tab Navigation** - 7 tabs: Home, Albums, Artists, Tracks, Playlists, Queue, Config
-- **Interactive Configuration** - Full form-based config with field validation
-- **Navidrome API Client** - Complete Subsonic API integration with authentication
-- **Audio Playback System** ✅ - Multi-format audio streaming (FLAC, MP3, OGG, WAV)
-- **Audio Decoders** ✅ - Custom PCM conversion pipeline for all supported formats
-- **Queue Management** ✅ - Complete queue controls: add, remove, clear, play/pause/next/prev
-- **Scrobbling System** ✅ - Full Last.fm and ListenBrainz support with Now Playing updates
-- **Albums Tab** ✅ - Live data browsing, modal track views, enhanced queue integration
-- **Artists Tab** ✅ - Live artist browsing, nested album/track modals, smart navigation
-- **Tracks Tab** - Live track browsing with formatted display and queue integration
-- **Modal System** ✅ - Album track modals, artist album modals, nested navigation
-- **Enhanced Keybindings** ✅ - Alt+Enter shortcuts, context-aware controls, intuitive workflow
-- **UI Framework** - Bubble Tea with Lipgloss styling and visual feedback
-- **Help System** ✅ - Context-aware overlay with comprehensive keybinding documentation
-- **Connection Testing** - Async Navidrome server validation
-- **Loading States** - Async data loading with error handling and retry
+- **Interactive Configuration** - Form-based config with field validation and connection testing
+- **Albums Tab** - Live browsing, modal track views, Alt+Enter quick queuing
+- **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart queue integration
+- **Tracks Tab** - Live track browsing with direct queue integration
+- **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking
+- **Modal System** - Seamless navigation flow with context-aware controls
+- **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
+- **Scrobbling System** - Full Last.fm and ListenBrainz support with Now Playing updates
+- **Process Management** - Proper MPV lifecycle with graceful shutdown and cleanup
 
 ### 🏗️ In Development
 - **Playlists Tab** - User playlist management and creation
@@ -116,7 +111,7 @@ navitone-cli/
 - **✅ Full Playback Controls** - Enter/Space to play, Ctrl+N/P for next/previous
 - **✅ Real Audio Playback** - Streaming audio from Navidrome with format support
 - Shows current playing track with ▶/⏸ indicators
-- Volume control with +/- keys
+- Volume control with Shift+Up/Down keys
 - Reorder tracks (Planned)
 
 ### ⚙️ Config
@@ -127,18 +122,20 @@ navitone-cli/
 
 ## 🎵 Audio System
 
-### Supported Formats ✅
-- **FLAC** - Lossless compression with proper int32→int16 PCM conversion
-- **MP3** - Native decoder with optimized performance  
-- **OGG Vorbis** - Custom decoder with float32→int16 conversion and clamping
-- **WAV** - Basic WAV file support
+### MPV-Powered Backend ✅
+- **Universal Format Support** - MPV handles all audio formats natively (FLAC, MP3, OGG, WAV, AAC, M4A, etc.)
+- **Professional Audio Pipeline** - Battle-tested MPV audio processing and decoding
+- **Perfect Seeking** - Frame-accurate seeking in all compressed and uncompressed formats
+- **Network Streaming** - Robust HTTP streaming with intelligent buffering and retry logic
+- **Gapless Playback** - Seamless track transitions without audio dropouts
+- **Advanced Features** - Built-in replay gain, audio filters, and crossfading support
 
 ### Audio Pipeline ✅
-- **Streaming** - Direct HTTP streaming from Navidrome server
-- **Format Detection** - Automatic format detection from URLs and metadata
-- **PCM Conversion** - All formats standardized to 16-bit signed little endian stereo
-- **Audio Backend** - Oto library handles cross-platform audio (Pulse/ALSA/Pipewire)
-- **Real-time Playback** - Proper buffering and position tracking
+- **Streaming** - MPV handles direct HTTP streaming from Navidrome server with retry logic
+- **Format Detection** - MPV automatically detects and decodes all audio formats
+- **Cross-platform Audio** - MPV manages audio output across different systems (Pulse/ALSA/Pipewire/etc.)
+- **Real-time Playback** - Professional buffering with configurable buffer sizes
+- **JSON IPC Control** - Full control over playback via MPV's JSON IPC interface
 
 ### Playback Features ✅
 - **Queue Management** - Add/remove tracks, clear queue, visual navigation
@@ -151,8 +148,8 @@ navitone-cli/
 ## 🔧 Requirements
 
 - **Go 1.21+**
-- **Linux** (primary target platform)
-- **Audio System** (Pulse/ALSA/Pipewire) - Oto handles audio backend automatically
+- **MPV Media Player** - Install via your package manager (`sudo apt install mpv`, `brew install mpv`, etc.)
+- **Linux/macOS/Windows** - Cross-platform support via MPV
 - **Navidrome Server** (for music streaming)
 
 ## 📦 Installation
@@ -175,7 +172,6 @@ The application will automatically download required Go dependencies:
 
 ### Basic Navigation
 - **Tab/Shift+Tab** - Switch between tabs
-- **F1 or ?** - Toggle context-sensitive help
 - **Ctrl+C or q** - Quit application
 
 ### First Run Setup
@@ -204,11 +200,12 @@ The application will automatically download required Go dependencies:
 4. Navigate to **Queue** tab - manage your playback queue
    - X/Del to remove tracks, C to clear all
    - **✅ Enter/Space to play tracks with real audio**
-   - **✅ Ctrl+N/P for next/previous, +/- for volume**
+   - **✅ Alt+Left/Right for next/previous, Shift+Up/Down for volume**
 
 ### Enhanced Navigation & Playback ✅ WORKING
-- **Global Playback**: Ctrl+P (play/pause), Ctrl+N (next), Ctrl+B (previous)
-- **Volume Control**: +/- keys for volume adjustment
+- **Global Playback**: Space (play/pause), Alt+Left/Right (previous/next track)
+- **Volume Control**: Shift+Up/Down for volume adjustment
+- **Seeking**: Left/Right arrow keys for 10-second scrubbing
 - **Multi-format Support**: FLAC, MP3, OGG, WAV streaming with real-time playback
 - **Smart Queue Management**: Play from any track, queue remainder automatically
 - **Modal Navigation**: Seamless drilling down from artists → albums → tracks
@@ -226,7 +223,7 @@ password = \"your-password\"
 timeout = 30
 
 [audio]
-volume = 70
+volume = 100
 device = \"\"  # Auto-detect
 buffer_size = 4096
 
@@ -262,10 +259,10 @@ go build -o bin/navitone ./cmd/navitone
 ```
 
 ### Project Principles
-- **Conventional keybindings** - No vim-style navigation
-- **Context-aware help** - Help changes based on current view
-- **Clean architecture** - MVC pattern with clear separation
+- **Conventional keybindings** - No vim-style navigation, intuitive shortcuts
+- **Clean architecture** - MVC pattern with clear separation  
 - **User-friendly** - Terminal interface should feel intuitive
+- **Professional audio** - MPV backend for reliable, high-quality playback
 
 ### Contributing
 1. Fork the repository
@@ -276,27 +273,29 @@ go build -o bin/navitone ./cmd/navitone
 
 ## 🎯 Roadmap
 
-### Phase 1 (Core Functionality)
-- [x] Interactive configuration forms with validation
-- [x] Navidrome API integration with connection testing
-- [x] Comprehensive scrobbling support (Last.fm & ListenBrainz)
-- [x] **Albums tab with modal track views and enhanced navigation** ✅ (COMPLETE)
-- [x] **Artists tab with nested album/track modals** ✅ (COMPLETE)
-- [x] **Tracks tab with live data browsing and queue integration** ✅ (COMPLETE)
-- [x] **Modal system with intuitive navigation flow** ✅ (COMPLETE)
-- [x] **Enhanced keybindings (Alt+Enter, context-aware controls)** ✅ (COMPLETE)
-- [x] **Audio playback system with multi-format support** ✅ (COMPLETE)
-- [x] **Queue management with smart playback controls** ✅ (COMPLETE)
-- [x] **Audio encoding/decoding pipeline** ✅ (COMPLETE)
-- [ ] **Playlists tab with playlist management** (Not Started)
-- [ ] **Home tab with proper curated sections** (Partially Done)
-- [ ] **Sorting options for browse tabs** (Not Implemented)
-- [ ] **Advanced queue features** (Reorder, shuffle, repeat modes)
+### Phase 1 (Core Functionality) - ✅ COMPLETE
+- [x] **MPV Audio Backend** - Complete replacement of custom decoders with professional MPV system
+- [x] **Interactive Configuration** - Forms with validation and connection testing
+- [x] **Navidrome Integration** - Full API support for streaming and library management
+- [x] **Albums Tab** - Modal track views with enhanced navigation and quick queuing
+- [x] **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart integration
+- [x] **Tracks Tab** - Live browsing with direct queue integration
+- [x] **Queue Management** - Complete playback controls with volume and seeking
+- [x] **Modal System** - Intuitive navigation flow with context-aware controls  
+- [x] **Enhanced Keybindings** - Clean, conventional shortcuts without vim-style navigation
+- [x] **Process Management** - Proper MPV lifecycle with graceful shutdown
+- [x] **Scrobbling Support** - Last.fm and ListenBrainz with Now Playing updates
 
-### Phase 2 (Enhancements)
+### Phase 2 (Remaining Features)
+- [ ] **Playlists Tab** - User playlist management and creation
+- [ ] **Home Tab Curation** - Proper Recently Played, Most Played, Random sections
+- [ ] **Sorting Options** - Sort controls for Albums, Artists, Tracks tabs  
+- [ ] **Advanced Queue Features** - Reorder tracks, shuffle mode, repeat modes
+
+### Phase 3 (Advanced Features)
 - [ ] Advanced mouse support
-- [ ] Album art display
-- [ ] Lyrics integration
+- [ ] Album art display (ASCII)
+- [ ] Lyrics integration  
 - [ ] Performance optimizations
 - [ ] Plugin system
 
@@ -326,6 +325,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Note**: This project is in active development with **core audio functionality now complete**! The audio playback system, multi-format encoding/decoding, and queue management are fully working. See the Current Status section above for what's currently working.
+**Note**: Phase 1 core functionality is **complete**! The application now features a professional MPV-powered audio backend with universal format support, intuitive modal navigation, smart queue management, and clean keybindings. Ready for daily use with any Navidrome server.
 
-**Latest Update**: ✅ Enhanced navigation system complete! Modal-based album/track browsing, Alt+Enter quick queuing, smart playback (play from any track + queue remainder), and comprehensive keybindings for intuitive workflow.
+**Latest Update**: ✅ **MPV Audio Migration Complete** - Replaced custom decoders with professional MPV backend, cleaned up keybindings, fixed process management, and streamlined the user interface for optimal usability.

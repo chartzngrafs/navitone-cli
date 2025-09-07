@@ -98,7 +98,7 @@ type AppState struct {
 	Queue         []Track
 	Volume        int
 	Position      time.Duration
-	ShowHelp      bool
+	IsShuffleMode bool
 	ConfigForm    *ConfigFormState
 	
 	// Content state
