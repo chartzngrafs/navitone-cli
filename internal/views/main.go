@@ -103,13 +103,20 @@ func (v *MainView) SetSize(width, height int) {
 // Render returns the complete view string
 func (v *MainView) Render() string {
 	if v.width == 0 || v.height == 0 {
-		return "Loading..."
+		// Don't show "Loading..." - instead render with fallback dimensions
+		// This prevents the UI from disappearing when dimensions are temporarily reset
+		v.width = 80   // Fallback width
+		v.height = 24  // Fallback height
 	}
+	
 
 	var sections []string
 
-	// Header with tabs
-	sections = append(sections, v.renderHeader())
+	// Header with tabs - always render header first
+	header := v.renderHeader()
+	
+	
+	sections = append(sections, header)
 
 	// Main content area
 	sections = append(sections, v.renderContent())
@@ -126,6 +133,8 @@ func (v *MainView) Render() string {
 
 	// Modal overlays if active
 	content := strings.Join(sections, "\n")
+	
+	
 	if v.state.ShowAlbumModal {
 		return v.renderAlbumModalOverlay(content)
 	}
@@ -141,6 +150,7 @@ func (v *MainView) Render() string {
 
 // renderHeader creates the header with tab navigation
 func (v *MainView) renderHeader() string {
+	
 	var tabs []string
 
 	for i := models.HomeTab; i <= models.ConfigTab; i++ {
@@ -937,7 +947,7 @@ func (v *MainView) formatModalAlbumLine(album models.Album, selected bool) strin
 }
 
 // overlayModal overlays a modal on the background content using lipgloss positioning
-func (v *MainView) overlayModal(_ /* background */, modal string, modalWidth, modalHeight int) string {
+func (v *MainView) overlayModal(background, modal string, modalWidth, modalHeight int) string {
 	// Use lipgloss to properly position the modal
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -979,7 +989,7 @@ func (v *MainView) renderSearchModalOverlay(background string) string {
 		if len(results.Artists) == 0 && len(results.Albums) == 0 && len(results.Tracks) == 0 {
 			content.WriteString("No results found")
 		} else {
-			content.WriteString("↑↓ Navigate • Enter to select • Esc to close\n\n")
+			content.WriteString("↑↓ Navigate • Enter: Play & queue remaining • Shift+Enter: Queue only • Esc to close\n\n")
 			
 			currentIndex := 0
 			
@@ -989,6 +999,17 @@ func (v *MainView) renderSearchModalOverlay(background string) string {
 				for _, artist := range results.Artists {
 					selected := currentIndex == v.state.SelectedSearchIndex
 					line := v.formatSearchArtistLine(artist, selected)
+					content.WriteString(line)
+					content.WriteString("\n")
+					currentIndex++
+				}
+				// Add MORE option if we have exactly 5 artists (indicating more might be available)
+				if len(results.Artists) == 5 {
+					selected := currentIndex == v.state.SelectedSearchIndex
+					line := "  " + "→ MORE artists..."
+					if selected {
+						line = v.styles.ActiveField.Render("> " + "→ MORE artists...")
+					}
 					content.WriteString(line)
 					content.WriteString("\n")
 					currentIndex++
@@ -1006,6 +1027,17 @@ func (v *MainView) renderSearchModalOverlay(background string) string {
 					content.WriteString("\n")
 					currentIndex++
 				}
+				// Add MORE option if we have exactly 5 albums
+				if len(results.Albums) == 5 {
+					selected := currentIndex == v.state.SelectedSearchIndex
+					line := "  " + "→ MORE albums..."
+					if selected {
+						line = v.styles.ActiveField.Render("> " + "→ MORE albums...")
+					}
+					content.WriteString(line)
+					content.WriteString("\n")
+					currentIndex++
+				}
 				content.WriteString("\n")
 			}
 			
@@ -1015,6 +1047,17 @@ func (v *MainView) renderSearchModalOverlay(background string) string {
 				for _, track := range results.Tracks {
 					selected := currentIndex == v.state.SelectedSearchIndex
 					line := v.formatSearchTrackLine(track, selected)
+					content.WriteString(line)
+					content.WriteString("\n")
+					currentIndex++
+				}
+				// Add MORE option if we have exactly 5 tracks
+				if len(results.Tracks) == 5 {
+					selected := currentIndex == v.state.SelectedSearchIndex
+					line := "  " + "→ MORE tracks..."
+					if selected {
+						line = v.styles.ActiveField.Render("> " + "→ MORE tracks...")
+					}
 					content.WriteString(line)
 					content.WriteString("\n")
 					currentIndex++

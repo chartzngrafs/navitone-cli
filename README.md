@@ -28,7 +28,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking
 - **Modal System** - Seamless navigation flow with context-aware controls
 - **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
-- **Global Search** - Shift+S modal search across artists, albums, and tracks with organized results
+- **Enhanced Global Search** - Shift+S modal search with intelligent result limiting, pagination, and dual-mode playback
 - **Scrobbling System** - Full Last.fm and ListenBrainz support with Now Playing updates
 - **Process Management** - Proper MPV lifecycle with graceful shutdown and cleanup
 
@@ -173,7 +173,7 @@ The application will automatically download required Go dependencies:
 
 ### Basic Navigation
 - **Tab/Shift+Tab** - Switch between tabs
-- **Shift+S** - Global search across all music content
+- **Shift+S** - Enhanced global search with intelligent pagination and dual-mode playback
 - **Ctrl+C or q** - Quit application
 
 ### First Run Setup
@@ -206,7 +206,11 @@ The application will automatically download required Go dependencies:
 
 ### Enhanced Navigation & Playback ✅ WORKING
 - **Global Playback**: Space (play/pause), Alt+Left/Right (previous/next track)
-- **Global Search**: Shift+S opens search modal with real-time results across all content
+- **Enhanced Global Search**: Shift+S opens intelligent search modal with:
+  - Smart result limiting (5 per section: Artists, Albums, Tracks)
+  - "MORE" pagination options for browsing additional results
+  - Dual-mode playback: Enter (play + queue remaining) vs Shift+Enter (queue only)
+  - Real-time search with organized, categorized results
 - **Volume Control**: Shift+Up/Down for volume adjustment
 - **Seeking**: Left/Right arrow keys for 10-second scrubbing
 - **Multi-format Support**: FLAC, MP3, OGG, WAV streaming with real-time playback
@@ -286,7 +290,7 @@ go build -o bin/navitone ./cmd/navitone
 - [x] **Queue Management** - Complete playback controls with volume and seeking
 - [x] **Modal System** - Intuitive navigation flow with context-aware controls  
 - [x] **Enhanced Keybindings** - Clean, conventional shortcuts without vim-style navigation
-- [x] **Global Search** - Shift+S modal search across artists, albums, and tracks with organized results
+- [x] **Enhanced Global Search** - Shift+S modal with intelligent pagination, dual-mode playback, and smart result limiting
 - [x] **Process Management** - Proper MPV lifecycle with graceful shutdown
 - [x] **Scrobbling Support** - Last.fm and ListenBrainz with Now Playing updates
 
@@ -331,4 +335,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Note**: Phase 1 core functionality is **complete**! The application now features a professional MPV-powered audio backend with universal format support, intuitive modal navigation, smart queue management, and clean keybindings. Ready for daily use with any Navidrome server.
 
-**Latest Update**: ✅ **Global Search Implementation Complete** - Added Shift+S global search modal with real-time searching across artists, albums, and tracks. Features organized results display, smart navigation, and seamless integration with existing modal system.
+**Latest Update**: ✅ **Enhanced Global Search Complete** - Upgraded Shift+S global search with intelligent result limiting (5 per section), "MORE" pagination for browsing additional results, and dual-mode playback controls (Enter: play + queue remaining, Shift+Enter: queue only). Features smart navigation that prevents getting stuck on last items and seamless integration with existing modal workflows.

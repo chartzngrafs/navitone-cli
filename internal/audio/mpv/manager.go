@@ -470,7 +470,7 @@ func (m *Manager) Close() error {
 // logMessage sends a message to the log callback if available
 func (m *Manager) logMessage(message string) {
 	if m.logCallback != nil {
-		go m.logCallback(message)
+		m.logCallback(message)
 	}
 }
 

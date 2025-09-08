@@ -145,6 +145,9 @@ type AppState struct {
 	SearchResults       SearchResults
 	LoadingSearchResults bool
 	SelectedSearchIndex int
+	SearchArtistsOffset int
+	SearchAlbumsOffset  int
+	SearchTracksOffset  int
 	
 	// Log state (for contained event logging)
 	LogMessages []string

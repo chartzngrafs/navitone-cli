@@ -76,6 +76,10 @@ func (m *MPVProcess) Start(args []string) error {
 		Setpgid: true,
 	}
 
+	// Redirect stdout and stderr to prevent MPV output from interfering with TUI
+	m.process.Stdout = nil
+	m.process.Stderr = nil
+
 	// Start the process
 	if err := m.process.Start(); err != nil {
 		return fmt.Errorf("failed to start MPV process: %w", err)

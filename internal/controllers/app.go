@@ -243,6 +243,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.LoadingError = ""
 		}
 		return a, nil
+	case SearchMoreResult:
+		// Handle search more result
+		a.state.LoadingSearchResults = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			// Append new results to existing ones
+			switch msg.Section {
+			case "artists":
+				a.state.SearchResults.Artists = append(a.state.SearchResults.Artists, msg.Artists...)
+			case "albums":
+				a.state.SearchResults.Albums = append(a.state.SearchResults.Albums, msg.Albums...)
+			case "tracks":
+				a.state.SearchResults.Tracks = append(a.state.SearchResults.Tracks, msg.Tracks...)
+			}
+			a.state.LoadingError = ""
+		}
+		return a, nil
 	}
 
 	return a, nil
@@ -264,8 +282,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				a.logMessage(fmt.Sprintf("Play/Pause error: %v", err))
 			}
-			// Force immediate state sync
-			a.updateAudioState(a.state)
+			// Let normal Bubble Tea update cycle handle state sync to prevent race conditions
 		} else {
 			a.state.IsPlaying = !a.state.IsPlaying
 		}
@@ -292,9 +309,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Global: Alt+S - Toggle shuffle
 		if a.audioManager != nil {
 			a.audioManager.ToggleShuffle()
-			// Force immediate state sync
-			a.updateAudioState(a.state)
-			a.logMessage(fmt.Sprintf("Shuffle %s", map[bool]string{true: "enabled", false: "disabled"}[a.state.IsShuffleMode]))
+			// Let normal Bubble Tea update cycle handle state sync to prevent race conditions
+			a.logMessage(fmt.Sprintf("Shuffle toggled"))
 		} else {
 			a.state.IsShuffleMode = !a.state.IsShuffleMode
 		}
@@ -368,6 +384,9 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.state.SearchResults = models.SearchResults{}
 		a.state.SelectedSearchIndex = 0
 		a.state.LoadingSearchResults = false
+		a.state.SearchArtistsOffset = 0
+		a.state.SearchAlbumsOffset = 0
+		a.state.SearchTracksOffset = 0
 		return a, nil
 	case "ctrl+c", "q":
 		return a, a.cleanup()
@@ -1220,10 +1239,7 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// Start playing the first track (selected one)
 				a.audioManager.PlayTrackAtIndex(0)
 				
-				// Immediately sync the state manually
-				a.state.Queue = a.audioManager.GetQueue()
-				a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
-				a.state.IsPlaying = a.audioManager.IsPlaying()
+				// Let normal Bubble Tea update cycle handle state sync to prevent race conditions during modal closing
 				
 				// Log the action for user feedback
 				trackNum := selectedTrack.Track
@@ -1306,10 +1322,16 @@ func (a *App) handleSearchModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.state.SearchResults = models.SearchResults{}
 		a.state.SelectedSearchIndex = 0
 		a.state.LoadingSearchResults = false
+		a.state.SearchArtistsOffset = 0
+		a.state.SearchAlbumsOffset = 0
+		a.state.SearchTracksOffset = 0
 		return a, nil
 	case "enter":
-		// Handle search result selection
-		return a.handleSearchSelection()
+		// Handle search result selection - Play and queue remaining
+		return a.handleSearchSelection(false)
+	case "shift+enter":
+		// Handle search result selection - Queue only
+		return a.handleSearchSelection(true)
 	case "up":
 		// Navigate up in search results
 		if a.state.SelectedSearchIndex > 0 {
@@ -1319,6 +1341,18 @@ func (a *App) handleSearchModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		// Navigate down in search results
 		totalResults := len(a.state.SearchResults.Artists) + len(a.state.SearchResults.Albums) + len(a.state.SearchResults.Tracks)
+		
+		// Add MORE buttons to total count
+		if len(a.state.SearchResults.Artists) == 5 {
+			totalResults++ // Add MORE artists button
+		}
+		if len(a.state.SearchResults.Albums) == 5 {
+			totalResults++ // Add MORE albums button  
+		}
+		if len(a.state.SearchResults.Tracks) == 5 {
+			totalResults++ // Add MORE tracks button
+		}
+		
 		if a.state.SelectedSearchIndex < totalResults-1 {
 			a.state.SelectedSearchIndex++
 		}
@@ -1364,7 +1398,8 @@ func (a *App) performSearch() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		resp, err := a.navidromeClient.Search(ctx, query, 10, 10, 20) // 10 artists, 10 albums, 20 tracks
+		// Limit to 5 results per section for initial search
+		resp, err := a.navidromeClient.Search(ctx, query, 5, 5, 5) // 5 artists, 5 albums, 5 tracks
 		if err != nil {
 			return SearchResult{Error: err}
 		}
@@ -1428,30 +1463,214 @@ func (a *App) performSearch() tea.Cmd {
 }
 
 // handleSearchSelection handles when a search result is selected
-func (a *App) handleSearchSelection() (tea.Model, tea.Cmd) {
+func (a *App) handleSearchSelection(queueOnly bool) (tea.Model, tea.Cmd) {
 	totalArtists := len(a.state.SearchResults.Artists)
 	totalAlbums := len(a.state.SearchResults.Albums)
+	totalTracks := len(a.state.SearchResults.Tracks)
 	
-	if a.state.SelectedSearchIndex < totalArtists {
-		// Selected an artist - show artist modal
-		artist := a.state.SearchResults.Artists[a.state.SelectedSearchIndex]
+	selectedIndex := a.state.SelectedSearchIndex
+	currentIndex := 0
+	
+	// Check artists section
+	if selectedIndex < currentIndex+totalArtists {
+		// Selected an artist - show artist modal (same behavior for both modes)
+		artist := a.state.SearchResults.Artists[selectedIndex-currentIndex]
 		a.state.ShowSearchModal = false
 		return a, a.showArtistModal(artist)
-	} else if a.state.SelectedSearchIndex < totalArtists+totalAlbums {
-		// Selected an album - show album modal
-		albumIndex := a.state.SelectedSearchIndex - totalArtists
+	}
+	currentIndex += totalArtists
+	
+	// Check artists MORE button
+	if totalArtists == 5 && selectedIndex == currentIndex {
+		return a, a.loadMoreSearchResults("artists")
+	}
+	if totalArtists == 5 {
+		currentIndex++
+	}
+	
+	// Check albums section
+	if selectedIndex < currentIndex+totalAlbums {
+		// Selected an album - show album modal (same behavior for both modes)
+		albumIndex := selectedIndex - currentIndex
 		album := a.state.SearchResults.Albums[albumIndex]
 		a.state.ShowSearchModal = false
 		return a, a.showAlbumModal(album)
-	} else {
-		// Selected a track - add to queue
-		trackIndex := a.state.SelectedSearchIndex - totalArtists - totalAlbums
+	}
+	currentIndex += totalAlbums
+	
+	// Check albums MORE button
+	if totalAlbums == 5 && selectedIndex == currentIndex {
+		return a, a.loadMoreSearchResults("albums")
+	}
+	if totalAlbums == 5 {
+		currentIndex++
+	}
+	
+	// Check tracks section
+	if selectedIndex < currentIndex+totalTracks {
+		// Selected a track - different behavior based on mode
+		trackIndex := selectedIndex - currentIndex
 		if trackIndex < len(a.state.SearchResults.Tracks) {
 			track := a.state.SearchResults.Tracks[trackIndex]
 			a.state.ShowSearchModal = false
-			return a, a.addTrackToQueue(track)
+			
+			if queueOnly {
+				// Queue only - just add to queue
+				return a, a.addTrackToQueue(track)
+			} else {
+				// Play and queue remaining tracks from search results
+				remainingTracks := a.state.SearchResults.Tracks[trackIndex:]
+				
+				if a.audioManager != nil {
+					// Clear current queue and add the track selection
+					a.audioManager.ClearQueue()
+					a.audioManager.AddTracksToQueue(remainingTracks)
+					// Start playing the first track (selected one)
+					a.audioManager.PlayTrackAtIndex(0)
+					
+					// Log the action for user feedback
+					a.logMessage(fmt.Sprintf("Playing: %s - %s (%d tracks queued from search)", 
+						track.Artist, track.Title, len(remainingTracks)))
+				} else {
+					// Fallback if audio manager not available
+					a.state.Queue = remainingTracks
+					a.state.CurrentTrack = &track
+					a.state.IsPlaying = true
+					
+					a.logMessage(fmt.Sprintf("Playing: %s - %s", track.Artist, track.Title))
+				}
+				
+				return a, nil
+			}
 		}
+	}
+	currentIndex += totalTracks
+	
+	// Check tracks MORE button
+	if totalTracks == 5 && selectedIndex == currentIndex {
+		return a, a.loadMoreSearchResults("tracks")
 	}
 	
 	return a, nil
+}
+
+// SearchMoreResult represents the result of loading more search results
+type SearchMoreResult struct {
+	Section string
+	Artists []models.Artist
+	Albums  []models.Album
+	Tracks  []models.Track
+	Error   error
+}
+
+// loadMoreSearchResults loads the next 5 results for the specified section
+func (a *App) loadMoreSearchResults(section string) tea.Cmd {
+	if a.navidromeClient == nil || len(a.state.SearchQuery) == 0 {
+		return nil
+	}
+
+	query := a.state.SearchQuery
+	a.state.LoadingSearchResults = true
+
+	return tea.Cmd(func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+
+		// For now, we'll simulate offset by searching with higher limits and taking only the new results
+		// This is a simplification - ideally the Navidrome client would support offset parameters
+		totalArtistsNeeded := len(a.state.SearchResults.Artists)
+		totalAlbumsNeeded := len(a.state.SearchResults.Albums) 
+		totalTracksNeeded := len(a.state.SearchResults.Tracks)
+		
+		if section == "artists" {
+			totalArtistsNeeded += 5
+		}
+		if section == "albums" {
+			totalAlbumsNeeded += 5
+		}
+		if section == "tracks" {
+			totalTracksNeeded += 5
+		}
+
+		resp, err := a.navidromeClient.Search(ctx, query, totalArtistsNeeded, totalAlbumsNeeded, totalTracksNeeded)
+		if err != nil {
+			return SearchMoreResult{Section: section, Error: err}
+		}
+
+		// Extract only the new results
+		var newArtists []models.Artist
+		var newAlbums []models.Album
+		var newTracks []models.Track
+
+		switch section {
+		case "artists":
+			// Get artists beyond what we already have
+			startIdx := len(a.state.SearchResults.Artists)
+			if len(resp.SubsonicResponse.SearchResult3.Artist) > startIdx {
+				for i := startIdx; i < len(resp.SubsonicResponse.SearchResult3.Artist); i++ {
+					artist := resp.SubsonicResponse.SearchResult3.Artist[i]
+					newArtists = append(newArtists, models.Artist{
+						ID:         artist.ID,
+						Name:       artist.Name,
+						AlbumCount: artist.AlbumCount,
+						StarredAt:  artist.Starred,
+					})
+				}
+			}
+		case "albums":
+			// Get albums beyond what we already have
+			startIdx := len(a.state.SearchResults.Albums)
+			if len(resp.SubsonicResponse.SearchResult3.Album) > startIdx {
+				for i := startIdx; i < len(resp.SubsonicResponse.SearchResult3.Album); i++ {
+					album := resp.SubsonicResponse.SearchResult3.Album[i]
+					newAlbums = append(newAlbums, models.Album{
+						ID:         album.ID,
+						Name:       album.Name,
+						Artist:     album.Artist,
+						ArtistID:   album.ArtistID,
+						Year:       album.Year,
+						Genre:      album.Genre,
+						Duration:   album.Duration,
+						TrackCount: album.SongCount,
+						CreatedAt:  album.Created,
+						CoverArt:   album.CoverArt,
+					})
+				}
+			}
+		case "tracks":
+			// Get tracks beyond what we already have
+			startIdx := len(a.state.SearchResults.Tracks)
+			if len(resp.SubsonicResponse.SearchResult3.Song) > startIdx {
+				for i := startIdx; i < len(resp.SubsonicResponse.SearchResult3.Song); i++ {
+					song := resp.SubsonicResponse.SearchResult3.Song[i]
+					newTracks = append(newTracks, models.Track{
+						ID:       song.ID,
+						Title:    song.Title,
+						Artist:   song.Artist,
+						ArtistID: song.ArtistID,
+						Album:    song.Album,
+						AlbumID:  song.AlbumID,
+						Genre:    song.Genre,
+						Year:     song.Year,
+						Duration: song.Duration,
+						Track:    song.Track,
+						Disc:     song.DiscNumber,
+						Size:     song.Size,
+						Suffix:   song.Suffix,
+						BitRate:  song.BitRate,
+						Path:     song.Path,
+					})
+				}
+			}
+		}
+
+		return SearchMoreResult{
+			Section: section,
+			Artists: newArtists,
+			Albums:  newAlbums,
+			Tracks:  newTracks,
+			Error:   nil,
+		}
+	})
 }
