@@ -12,7 +12,6 @@ const (
 	HomeTab Tab = iota
 	AlbumsTab
 	ArtistsTab
-	TracksTab
 	PlaylistsTab
 	QueueTab
 	ConfigTab
@@ -27,8 +26,6 @@ func (t Tab) String() string {
 		return "Albums"
 	case ArtistsTab:
 		return "Artists"
-	case TracksTab:
-		return "Tracks"
 	case PlaylistsTab:
 		return "Playlists"
 	case QueueTab:
@@ -114,20 +111,30 @@ type AppState struct {
 	// Content state
 	Albums        []Album
 	Artists       []Artist
-	Tracks        []Track
 	Playlists     []Playlist
 	
 	// UI state
 	LoadingAlbums  bool
 	LoadingArtists bool
-	LoadingTracks  bool
 	LoadingError   string
 	
 	// Selection state
 	SelectedAlbumIndex int
 	SelectedArtistIndex int
-	SelectedTrackIndex int
 	SelectedQueueIndex int
+	
+	// Home tab navigation state
+	HomeSelectedSection  int  // 0=Recently Added, 1=Top Artists, 2=Most Played Albums, 3=Top Tracks
+	HomeSelectedIndex    int  // Index within the selected section
+	
+	// Home tab data
+	RecentlyAddedAlbums []Album
+	TopArtistsByPlays   []Artist  // with aggregated play counts
+	MostPlayedAlbums    []Album   // sorted by PlayCount
+	TopTracks           []Track   // sorted by PlayCount
+	
+	// Loading states for home sections
+	LoadingHomeData bool
 	
 	// Modal state
 	ShowAlbumModal      bool

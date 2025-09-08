@@ -148,8 +148,13 @@ func (c *Client) makeRequest(ctx context.Context, endpoint string, params url.Va
 
 // GetAlbums retrieves albums from the server
 func (c *Client) GetAlbums(ctx context.Context, limit, offset int) (*AlbumsResponse, error) {
+	return c.GetAlbumsByType(ctx, "newest", limit, offset)
+}
+
+// GetAlbumsByType gets albums sorted by different criteria
+func (c *Client) GetAlbumsByType(ctx context.Context, albumType string, limit, offset int) (*AlbumsResponse, error) {
 	params := url.Values{}
-	params.Add("type", "newest") // Required parameter for getAlbumList2
+	params.Add("type", albumType) // Types: "newest", "frequent", "recent", "random", "alphabeticalByName", "alphabeticalByArtist"
 	if limit > 0 {
 		params.Add("size", fmt.Sprintf("%d", limit))
 	}
@@ -251,6 +256,58 @@ func (c *Client) GetSongs(ctx context.Context, limit, offset int) (*SongsRespons
 		}{
 			BaseResponse: songsResp.SubsonicResponse.BaseResponse,
 			SongsByGenre: songsResp.SubsonicResponse.RandomSongs,
+		},
+	}
+
+	return convertedResp, nil
+}
+
+// GetTopTracks gets most played tracks
+func (c *Client) GetTopTracks(ctx context.Context, limit int) (*SongsResponse, error) {
+	// Use getTopSongs if available, otherwise fall back to random songs
+	params := url.Values{}
+	if limit > 0 {
+		params.Add("count", fmt.Sprintf("%d", limit))
+	}
+
+	// Try getTopSongs first (may not be available in all Navidrome versions)
+	resp, err := c.makeRequest(ctx, "getTopSongs", params)
+	if err != nil {
+		// Fallback to random songs if getTopSongs is not available
+		return c.GetSongs(ctx, limit, 0)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading top tracks response: %w", err)
+	}
+
+	var topSongsResp struct {
+		SubsonicResponse struct {
+			BaseResponse
+			TopSongs SongsList `json:"topSongs"`
+		} `json:"subsonic-response"`
+	}
+
+	if err := json.Unmarshal(body, &topSongsResp); err != nil {
+		// If parsing fails, fallback to random songs
+		return c.GetSongs(ctx, limit, 0)
+	}
+
+	if topSongsResp.SubsonicResponse.Status != "ok" {
+		// If status is not ok, fallback to random songs
+		return c.GetSongs(ctx, limit, 0)
+	}
+
+	// Convert to expected format
+	convertedResp := &SongsResponse{
+		SubsonicResponse: struct {
+			BaseResponse
+			SongsByGenre SongsList `json:"songsByGenre"`
+		}{
+			BaseResponse: topSongsResp.SubsonicResponse.BaseResponse,
+			SongsByGenre: topSongsResp.SubsonicResponse.TopSongs,
 		},
 	}
 

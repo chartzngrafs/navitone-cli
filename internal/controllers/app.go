@@ -40,9 +40,17 @@ func NewApp() *App {
 		ConfigForm: models.NewConfigFormState(cfg),
 		Albums:      make([]models.Album, 0),
 		Artists:     make([]models.Artist, 0),
-		Tracks:      make([]models.Track, 0),
 		Playlists:   make([]models.Playlist, 0),
 		LogMessages: make([]string, 0),
+		
+		// Initialize Home tab state
+		HomeSelectedSection:  0, // Start with Recently Added section
+		HomeSelectedIndex:    0,
+		RecentlyAddedAlbums:  make([]models.Album, 0),
+		TopArtistsByPlays:    make([]models.Artist, 0),
+		MostPlayedAlbums:     make([]models.Album, 0),
+		TopTracks:            make([]models.Track, 0),
+		LoadingHomeData:      false,
 	}
 
 
@@ -115,6 +123,10 @@ func (a *App) cleanup() tea.Cmd {
 
 // Init implements tea.Model
 func (a *App) Init() tea.Cmd {
+	// Load initial data for the current tab
+	if a.state.CurrentTab == models.HomeTab && a.navidromeClient != nil {
+		return a.loadHomeData()
+	}
 	return nil
 }
 
@@ -159,16 +171,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.LoadingError = msg.Error.Error()
 		} else {
 			a.state.Artists = msg.Artists
-			a.state.LoadingError = ""
-		}
-		return a, nil
-	case TracksLoadResult:
-		// Handle tracks load result
-		a.state.LoadingTracks = false
-		if msg.Error != nil {
-			a.state.LoadingError = msg.Error.Error()
-		} else {
-			a.state.Tracks = msg.Tracks
 			a.state.LoadingError = ""
 		}
 		return a, nil
@@ -219,6 +221,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.AlbumTracks = msg.Tracks
 			a.state.SelectedModalIndex = 0
 			a.state.LoadingError = ""
+		}
+		return a, nil
+	case HomeDataLoadResult:
+		// Handle home data load result
+		a.state.LoadingHomeData = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			a.state.RecentlyAddedAlbums = msg.RecentlyAdded
+			a.state.TopArtistsByPlays = msg.TopArtists
+			a.state.MostPlayedAlbums = msg.MostPlayed
+			a.state.TopTracks = msg.TopTracks
+			a.state.LoadingError = ""
+			a.logMessage("Home tab data loaded successfully")
 		}
 		return a, nil
 	case ArtistAlbumsModalResult:
@@ -363,14 +379,14 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Handle content browsing tabs
+	if a.state.CurrentTab == models.HomeTab {
+		return a.handleHomeKeyPress(msg)
+	}
 	if a.state.CurrentTab == models.AlbumsTab {
 		return a.handleAlbumsKeyPress(msg)
 	}
 	if a.state.CurrentTab == models.ArtistsTab {
 		return a.handleArtistsKeyPress(msg)
-	}
-	if a.state.CurrentTab == models.TracksTab {
-		return a.handleTracksKeyPress(msg)
 	}
 	if a.state.CurrentTab == models.QueueTab {
 		return a.handleQueueKeyPress(msg)
@@ -657,6 +673,13 @@ func (a *App) initializeNavidromeClient() {
 func (a *App) handleTabChange() tea.Cmd {
 	// Load data when entering certain tabs
 	switch a.state.CurrentTab {
+	case models.HomeTab:
+		if a.navidromeClient != nil && !a.state.LoadingHomeData {
+			// Load home data if we don't have any or if it's been a while
+			if len(a.state.RecentlyAddedAlbums) == 0 && len(a.state.TopArtistsByPlays) == 0 {
+				return a.loadHomeData()
+			}
+		}
 	case models.AlbumsTab:
 		if len(a.state.Albums) == 0 && a.navidromeClient != nil && !a.state.LoadingAlbums {
 			return a.loadAlbums()
@@ -665,12 +688,163 @@ func (a *App) handleTabChange() tea.Cmd {
 		if len(a.state.Artists) == 0 && a.navidromeClient != nil && !a.state.LoadingArtists {
 			return a.loadArtists()
 		}
-	case models.TracksTab:
-		if len(a.state.Tracks) == 0 && a.navidromeClient != nil && !a.state.LoadingTracks {
-			return a.loadTracks()
-		}
 	}
 	return nil
+}
+
+// handleHomeKeyPress handles keyboard input for the home tab
+func (a *App) handleHomeKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return a, a.cleanup()
+	case "tab":
+		a.nextTab()
+		return a, a.handleTabChange()
+	case "shift+tab":
+		a.prevTab()
+		return a, a.handleTabChange()
+	case "up":
+		// Navigate up through all items across all sections
+		a.moveHomeSelectionUp()
+	case "down":
+		// Navigate down through all items across all sections
+		a.moveHomeSelectionDown()
+	case "enter":
+		// Handle selection based on current section
+		return a.handleHomeSelection(false) // false = play and queue
+	case "shift+enter":
+		// Handle selection with queue only
+		return a.handleHomeSelection(true) // true = queue only
+	case "r":
+		// Refresh home data
+		return a, a.loadHomeData()
+	}
+
+	return a, nil
+}
+
+// getTotalHomeItems returns the total number of items across all home sections
+func (a *App) getTotalHomeItems() int {
+	return len(a.state.RecentlyAddedAlbums) + len(a.state.TopArtistsByPlays) + 
+		   len(a.state.MostPlayedAlbums) + len(a.state.TopTracks)
+}
+
+// getGlobalHomeIndex returns the global index across all sections
+func (a *App) getGlobalHomeIndex() int {
+	globalIndex := 0
+	
+	// Add items from sections before the current one
+	if a.state.HomeSelectedSection > 0 {
+		globalIndex += len(a.state.RecentlyAddedAlbums)
+	}
+	if a.state.HomeSelectedSection > 1 {
+		globalIndex += len(a.state.TopArtistsByPlays)
+	}
+	if a.state.HomeSelectedSection > 2 {
+		globalIndex += len(a.state.MostPlayedAlbums)
+	}
+	
+	// Add the current section index
+	globalIndex += a.state.HomeSelectedIndex
+	
+	return globalIndex
+}
+
+// setHomeSelectionFromGlobalIndex sets the section and index from a global index
+func (a *App) setHomeSelectionFromGlobalIndex(globalIndex int) {
+	currentIndex := 0
+	
+	// Section 0: Recently Added Albums
+	if globalIndex < currentIndex + len(a.state.RecentlyAddedAlbums) {
+		a.state.HomeSelectedSection = 0
+		a.state.HomeSelectedIndex = globalIndex - currentIndex
+		return
+	}
+	currentIndex += len(a.state.RecentlyAddedAlbums)
+	
+	// Section 1: Top Artists
+	if globalIndex < currentIndex + len(a.state.TopArtistsByPlays) {
+		a.state.HomeSelectedSection = 1
+		a.state.HomeSelectedIndex = globalIndex - currentIndex
+		return
+	}
+	currentIndex += len(a.state.TopArtistsByPlays)
+	
+	// Section 2: Most Played Albums
+	if globalIndex < currentIndex + len(a.state.MostPlayedAlbums) {
+		a.state.HomeSelectedSection = 2
+		a.state.HomeSelectedIndex = globalIndex - currentIndex
+		return
+	}
+	currentIndex += len(a.state.MostPlayedAlbums)
+	
+	// Section 3: Top Tracks
+	if globalIndex < currentIndex + len(a.state.TopTracks) {
+		a.state.HomeSelectedSection = 3
+		a.state.HomeSelectedIndex = globalIndex - currentIndex
+		return
+	}
+}
+
+// moveHomeSelectionUp moves selection up across all sections
+func (a *App) moveHomeSelectionUp() {
+	globalIndex := a.getGlobalHomeIndex()
+	if globalIndex > 0 {
+		a.setHomeSelectionFromGlobalIndex(globalIndex - 1)
+	}
+}
+
+// moveHomeSelectionDown moves selection down across all sections
+func (a *App) moveHomeSelectionDown() {
+	globalIndex := a.getGlobalHomeIndex()
+	totalItems := a.getTotalHomeItems()
+	if globalIndex < totalItems - 1 {
+		a.setHomeSelectionFromGlobalIndex(globalIndex + 1)
+	}
+}
+
+// handleHomeSelection handles when an item is selected in the home tab
+func (a *App) handleHomeSelection(queueOnly bool) (tea.Model, tea.Cmd) {
+	switch a.state.HomeSelectedSection {
+	case 0: // Recently Added Albums
+		if a.state.HomeSelectedIndex < len(a.state.RecentlyAddedAlbums) {
+			album := a.state.RecentlyAddedAlbums[a.state.HomeSelectedIndex]
+			return a, a.showAlbumModal(album)
+		}
+	case 1: // Top Artists
+		if a.state.HomeSelectedIndex < len(a.state.TopArtistsByPlays) {
+			artist := a.state.TopArtistsByPlays[a.state.HomeSelectedIndex]
+			return a, a.showArtistModal(artist)
+		}
+	case 2: // Most Played Albums
+		if a.state.HomeSelectedIndex < len(a.state.MostPlayedAlbums) {
+			album := a.state.MostPlayedAlbums[a.state.HomeSelectedIndex]
+			return a, a.showAlbumModal(album)
+		}
+	case 3: // Top Tracks
+		if a.state.HomeSelectedIndex < len(a.state.TopTracks) {
+			track := a.state.TopTracks[a.state.HomeSelectedIndex]
+			if queueOnly {
+				return a, a.addTrackToQueue(track)
+			} else {
+				// Play track and queue remaining
+				remainingTracks := a.state.TopTracks[a.state.HomeSelectedIndex:]
+				if a.audioManager != nil {
+					a.audioManager.ClearQueue()
+					a.audioManager.AddTracksToQueue(remainingTracks)
+					a.audioManager.PlayTrackAtIndex(0)
+					a.logMessage(fmt.Sprintf("Playing: %s - %s (%d tracks queued)", 
+						track.Artist, track.Title, len(remainingTracks)))
+				} else {
+					a.state.Queue = remainingTracks
+					a.state.CurrentTrack = &track
+					a.state.IsPlaying = true
+					a.logMessage(fmt.Sprintf("Playing: %s - %s", track.Artist, track.Title))
+				}
+			}
+		}
+	}
+	return a, nil
 }
 
 // handleAlbumsKeyPress handles keyboard input for the albums tab
@@ -790,28 +964,88 @@ func (a *App) loadArtists() tea.Cmd {
 	})
 }
 
-// loadTracks loads tracks from Navidrome
-func (a *App) loadTracks() tea.Cmd {
+// loadHomeData loads all data needed for the home tab
+func (a *App) loadHomeData() tea.Cmd {
 	if a.navidromeClient == nil {
 		return nil
 	}
 
-	a.state.LoadingTracks = true
+	a.state.LoadingHomeData = true
 	a.state.LoadingError = ""
 
 	return tea.Cmd(func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 
-		resp, err := a.navidromeClient.GetSongs(ctx, 50, 0) // Get first 50 songs
+		var homeData HomeDataLoadResult
+		
+		// Load Recently Added Albums
+		recentResp, err := a.navidromeClient.GetAlbumsByType(ctx, "newest", 8, 0)
 		if err != nil {
-			return TracksLoadResult{Error: err}
+			homeData.Error = err
+			return homeData
+		}
+		
+		// Convert recently added albums
+		homeData.RecentlyAdded = make([]models.Album, len(recentResp.SubsonicResponse.AlbumList2.Album))
+		for i, album := range recentResp.SubsonicResponse.AlbumList2.Album {
+			homeData.RecentlyAdded[i] = models.Album{
+				ID:         album.ID,
+				Name:       album.Name,
+				Artist:     album.Artist,
+				ArtistID:   album.ArtistID,
+				Year:       album.Year,
+				Genre:      album.Genre,
+				Duration:   album.Duration,
+				TrackCount: album.SongCount,
+				CreatedAt:  album.Created,
+				CoverArt:   album.CoverArt,
+			}
 		}
 
-		// Convert Navidrome songs to our model
-		tracks := make([]models.Track, len(resp.SubsonicResponse.SongsByGenre.Song))
-		for i, song := range resp.SubsonicResponse.SongsByGenre.Song {
-			tracks[i] = models.Track{
+		// Load Most Played Albums
+		frequentResp, err := a.navidromeClient.GetAlbumsByType(ctx, "frequent", 8, 0)
+		if err != nil {
+			// If frequent doesn't work, try recent or newest as fallback
+			frequentResp, err = a.navidromeClient.GetAlbumsByType(ctx, "recent", 8, 0)
+			if err != nil {
+				// Final fallback to newest
+				frequentResp = recentResp // Reuse recently added as fallback
+			}
+		}
+		
+		// Convert most played albums
+		homeData.MostPlayed = make([]models.Album, len(frequentResp.SubsonicResponse.AlbumList2.Album))
+		for i, album := range frequentResp.SubsonicResponse.AlbumList2.Album {
+			homeData.MostPlayed[i] = models.Album{
+				ID:         album.ID,
+				Name:       album.Name,
+				Artist:     album.Artist,
+				ArtistID:   album.ArtistID,
+				Year:       album.Year,
+				Genre:      album.Genre,
+				Duration:   album.Duration,
+				TrackCount: album.SongCount,
+				CreatedAt:  album.Created,
+				CoverArt:   album.CoverArt,
+			}
+		}
+
+		// Load Top Tracks
+		tracksResp, err := a.navidromeClient.GetTopTracks(ctx, 10)
+		if err != nil {
+			// Fallback to random songs if top tracks fails
+			tracksResp, err = a.navidromeClient.GetSongs(ctx, 10, 0)
+			if err != nil {
+				homeData.Error = err
+				return homeData
+			}
+		}
+		
+		// Convert top tracks
+		homeData.TopTracks = make([]models.Track, len(tracksResp.SubsonicResponse.SongsByGenre.Song))
+		for i, song := range tracksResp.SubsonicResponse.SongsByGenre.Song {
+			homeData.TopTracks[i] = models.Track{
 				ID:       song.ID,
 				Title:    song.Title,
 				Artist:   song.Artist,
@@ -830,8 +1064,54 @@ func (a *App) loadTracks() tea.Cmd {
 			}
 		}
 
-		return TracksLoadResult{Tracks: tracks}
+		// Load Top Artists (aggregate from albums)
+		artistsResp, err := a.navidromeClient.GetArtists(ctx)
+		if err != nil {
+			homeData.Error = err
+			return homeData
+		}
+		
+		// Convert artists and sort by play count (approximate with album count for now)
+		var allArtists []models.Artist
+		for _, index := range artistsResp.SubsonicResponse.Artists.Index {
+			for _, artist := range index.Artist {
+				allArtists = append(allArtists, models.Artist{
+					ID:         artist.ID,
+					Name:       artist.Name,
+					AlbumCount: artist.AlbumCount,
+					StarredAt:  artist.Starred,
+				})
+			}
+		}
+		
+		// Sort artists by album count (descending) and take top 5
+		// TODO: In future, aggregate actual play counts from albums
+		for i := 0; i < len(allArtists)-1; i++ {
+			for j := 0; j < len(allArtists)-i-1; j++ {
+				if allArtists[j].AlbumCount < allArtists[j+1].AlbumCount {
+					allArtists[j], allArtists[j+1] = allArtists[j+1], allArtists[j]
+				}
+			}
+		}
+		
+		// Take top 5 artists
+		maxArtists := 5
+		if len(allArtists) < maxArtists {
+			maxArtists = len(allArtists)
+		}
+		homeData.TopArtists = allArtists[:maxArtists]
+
+		return homeData
 	})
+}
+
+// HomeDataLoadResult represents the result of loading home tab data
+type HomeDataLoadResult struct {
+	RecentlyAdded []models.Album
+	MostPlayed    []models.Album
+	TopTracks     []models.Track
+	TopArtists    []models.Artist
+	Error         error
 }
 
 // addAlbumToQueue adds all tracks from an album to the queue
@@ -960,37 +1240,6 @@ type ArtistTracksLoadResult struct {
 	Error  error
 }
 
-// handleTracksKeyPress handles keyboard input for the tracks tab
-func (a *App) handleTracksKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c", "q":
-		return a, a.cleanup()
-	case "tab":
-		a.nextTab()
-		return a, a.handleTabChange()
-	case "shift+tab":
-		a.prevTab()
-		return a, a.handleTabChange()
-	case "up":
-		if a.state.SelectedTrackIndex > 0 {
-			a.state.SelectedTrackIndex--
-		}
-	case "down":
-		if a.state.SelectedTrackIndex < len(a.state.Tracks)-1 {
-			a.state.SelectedTrackIndex++
-		}
-	case "enter":
-		// Add selected track to queue
-		if a.state.SelectedTrackIndex < len(a.state.Tracks) {
-			return a, a.addTrackToQueue(a.state.Tracks[a.state.SelectedTrackIndex])
-		}
-	case "r":
-		// Refresh tracks
-		return a, a.loadTracks()
-	}
-
-	return a, nil
-}
 
 // addTrackToQueue adds a single track to the queue
 func (a *App) addTrackToQueue(track models.Track) tea.Cmd {
@@ -1067,10 +1316,6 @@ type ArtistsLoadResult struct {
 	Error   error
 }
 
-type TracksLoadResult struct {
-	Tracks []models.Track
-	Error  error
-}
 
 // Modal-specific message types
 type AlbumTracksModalResult struct {
@@ -1097,14 +1342,14 @@ func (a *App) handleMouseEvent(_ tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // nextTab switches to the next tab
 func (a *App) nextTab() {
-	a.state.CurrentTab = models.Tab((int(a.state.CurrentTab) + 1) % 7)
+	a.state.CurrentTab = models.Tab((int(a.state.CurrentTab) + 1) % 6)
 }
 
 // prevTab switches to the previous tab
 func (a *App) prevTab() {
 	current := int(a.state.CurrentTab)
 	if current == 0 {
-		current = 7
+		current = 6
 	}
 	a.state.CurrentTab = models.Tab(current - 1)
 }

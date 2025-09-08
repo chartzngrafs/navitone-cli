@@ -179,8 +179,6 @@ func (v *MainView) renderContent() string {
 		return content.Render(v.renderAlbumsTab())
 	case models.ArtistsTab:
 		return content.Render(v.renderArtistsTab())
-	case models.TracksTab:
-		return content.Render(v.renderTracksTab())
 	case models.PlaylistsTab:
 		return content.Render(v.renderPlaylistsTab())
 	case models.QueueTab:
@@ -201,6 +199,14 @@ func (v *MainView) renderFooter() string {
 
 // Tab-specific render functions
 func (v *MainView) renderHomeTab() string {
+	if v.state.LoadingHomeData {
+		return "🏠 Home\n\nLoading home data..."
+	}
+	
+	if v.state.LoadingError != "" {
+		return fmt.Sprintf("🏠 Home\n\n❌ Error: %s\n\nPress 'r' to retry", v.state.LoadingError)
+	}
+	
 	var content strings.Builder
 	content.WriteString("🏠 Home\n\n")
 	
@@ -218,77 +224,234 @@ func (v *MainView) renderHomeTab() string {
 		content.WriteString("\n\n")
 	}
 	
-	// Library stats
-	content.WriteString("📊 Library Overview\n")
-	content.WriteString(fmt.Sprintf("Albums: %d | Artists: %d | Tracks: %d\n\n", 
-		len(v.state.Albums), len(v.state.Artists), len(v.state.Tracks)))
+	// Instructions
+	content.WriteString("↑↓ Navigate • Enter/Shift+Enter to select • R to refresh\n\n")
 	
-	// Recently added albums (show first few)
-	content.WriteString("💿 Recently Added Albums\n")
-	if len(v.state.Albums) == 0 {
-		content.WriteString("Load albums data by visiting the Albums tab\n\n")
-	} else {
-		maxShow := 5
-		if len(v.state.Albums) < maxShow {
-			maxShow = len(v.state.Albums)
-		}
-		for i := 0; i < maxShow; i++ {
-			album := v.state.Albums[i]
-			yearStr := ""
-			if album.Year > 0 {
-				yearStr = fmt.Sprintf(" (%d)", album.Year)
-			}
-			content.WriteString(fmt.Sprintf("  • %s - %s%s\n", album.Artist, album.Name, yearStr))
-		}
-		if len(v.state.Albums) > maxShow {
-			content.WriteString(fmt.Sprintf("  ... and %d more (visit Albums tab)\n", len(v.state.Albums)-maxShow))
-		}
-		content.WriteString("\n")
+	// Render all four sections vertically
+	content.WriteString(v.renderHomeSections())
+	
+	return content.String()
+}
+
+// renderHomeSections renders all four home sections vertically with interactive navigation
+func (v *MainView) renderHomeSections() string {
+	var sections strings.Builder
+	
+	// Use full width for vertical layout
+	sectionWidth := v.width - 4 // Leave space for padding
+	if sectionWidth < 40 {
+		sectionWidth = 40
 	}
 	
-	// Top artists by album count
-	content.WriteString("🎤 Top Artists\n")
-	if len(v.state.Artists) == 0 {
-		content.WriteString("Load artists data by visiting the Artists tab\n\n")
+	// Render all sections vertically
+	sections.WriteString(v.renderRecentlyAddedSection(sectionWidth))
+	sections.WriteString("\n")
+	sections.WriteString(v.renderTopArtistsSection(sectionWidth))
+	sections.WriteString("\n")
+	sections.WriteString(v.renderMostPlayedAlbumsSection(sectionWidth))
+	sections.WriteString("\n")
+	sections.WriteString(v.renderTopTracksSection(sectionWidth))
+	
+	return sections.String()
+}
+
+// renderRecentlyAddedSection renders the Recently Added Albums section
+func (v *MainView) renderRecentlyAddedSection(width int) string {
+	var content strings.Builder
+	isActiveSection := v.state.HomeSelectedSection == 0
+	
+	// Section title with indicator if active
+	title := "💿 Recently Added Albums"
+	if isActiveSection {
+		title = v.styles.ActiveField.Render(title)
 	} else {
-		// Sort artists by album count (simple bubble sort for top 5)
-		topArtists := make([]models.Artist, len(v.state.Artists))
-		copy(topArtists, v.state.Artists)
-		
-		// Simple sort by album count (descending)
-		for i := 0; i < len(topArtists)-1; i++ {
-			for j := 0; j < len(topArtists)-i-1; j++ {
-				if topArtists[j].AlbumCount < topArtists[j+1].AlbumCount {
-					topArtists[j], topArtists[j+1] = topArtists[j+1], topArtists[j]
-				}
-			}
-		}
-		
-		maxShow := 5
-		if len(topArtists) < maxShow {
-			maxShow = len(topArtists)
-		}
-		for i := 0; i < maxShow; i++ {
-			artist := topArtists[i]
-			star := ""
-			if artist.StarredAt != nil {
-				star = "★ "
-			}
-			albumText := "album"
-			if artist.AlbumCount != 1 {
-				albumText = "albums"
-			}
-			content.WriteString(fmt.Sprintf("  • %s%s (%d %s)\n", 
-				star, artist.Name, artist.AlbumCount, albumText))
-		}
-		if len(v.state.Artists) > maxShow {
-			content.WriteString(fmt.Sprintf("  ... and %d more (visit Artists tab)\n", len(v.state.Artists)-maxShow))
-		}
-		content.WriteString("\n")
+		title = v.styles.SectionTitle.Render(title)
+	}
+	content.WriteString(title + "\n")
+	
+	if len(v.state.RecentlyAddedAlbums) == 0 {
+		content.WriteString("  No albums loaded\n")
+		return content.String()
 	}
 	
-	// Navigation hint
-	content.WriteString("💡 Navigate with Tab/Shift+Tab • See keybinds below")
+	// Show albums with selection highlighting
+	maxShow := 6 // More items since we have vertical space
+	if len(v.state.RecentlyAddedAlbums) < maxShow {
+		maxShow = len(v.state.RecentlyAddedAlbums)
+	}
+	
+	for i := 0; i < maxShow; i++ {
+		album := v.state.RecentlyAddedAlbums[i]
+		yearStr := ""
+		if album.Year > 0 {
+			yearStr = fmt.Sprintf(" (%d)", album.Year)
+		}
+		
+		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
+		if isActiveSection && v.state.HomeSelectedIndex == i {
+			line = v.styles.ActiveField.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		content.WriteString(line + "\n")
+	}
+	
+	if len(v.state.RecentlyAddedAlbums) > maxShow {
+		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.RecentlyAddedAlbums)-maxShow))
+	}
+	
+	return content.String()
+}
+
+// renderTopArtistsSection renders the Top Artists section
+func (v *MainView) renderTopArtistsSection(width int) string {
+	var content strings.Builder
+	isActiveSection := v.state.HomeSelectedSection == 1
+	
+	// Section title with indicator if active
+	title := "🎤 Top Artists"
+	if isActiveSection {
+		title = v.styles.ActiveField.Render(title)
+	} else {
+		title = v.styles.SectionTitle.Render(title)
+	}
+	content.WriteString(title + "\n")
+	
+	if len(v.state.TopArtistsByPlays) == 0 {
+		content.WriteString("  No artists loaded\n")
+		return content.String()
+	}
+	
+	// Show artists with selection highlighting
+	maxShow := 5 // Show all 5 top artists
+	if len(v.state.TopArtistsByPlays) < maxShow {
+		maxShow = len(v.state.TopArtistsByPlays)
+	}
+	
+	for i := 0; i < maxShow; i++ {
+		artist := v.state.TopArtistsByPlays[i]
+		star := ""
+		if artist.StarredAt != nil {
+			star = "★ "
+		}
+		
+		albumText := "album"
+		if artist.AlbumCount != 1 {
+			albumText = "albums"
+		}
+		
+		line := fmt.Sprintf("%s%s (%d %s)", star, artist.Name, artist.AlbumCount, albumText)
+		if isActiveSection && v.state.HomeSelectedIndex == i {
+			line = v.styles.ActiveField.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		content.WriteString(line + "\n")
+	}
+	
+	if len(v.state.TopArtistsByPlays) > maxShow {
+		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.TopArtistsByPlays)-maxShow))
+	}
+	
+	return content.String()
+}
+
+// renderMostPlayedAlbumsSection renders the Most Played Albums section
+func (v *MainView) renderMostPlayedAlbumsSection(width int) string {
+	var content strings.Builder
+	isActiveSection := v.state.HomeSelectedSection == 2
+	
+	// Section title with indicator if active
+	title := "🔥 Most Played Albums"
+	if isActiveSection {
+		title = v.styles.ActiveField.Render(title)
+	} else {
+		title = v.styles.SectionTitle.Render(title)
+	}
+	content.WriteString(title + "\n")
+	
+	if len(v.state.MostPlayedAlbums) == 0 {
+		content.WriteString("  No albums loaded\n")
+		return content.String()
+	}
+	
+	// Show albums with selection highlighting
+	maxShow := 6 // More items since we have vertical space
+	if len(v.state.MostPlayedAlbums) < maxShow {
+		maxShow = len(v.state.MostPlayedAlbums)
+	}
+	
+	for i := 0; i < maxShow; i++ {
+		album := v.state.MostPlayedAlbums[i]
+		yearStr := ""
+		if album.Year > 0 {
+			yearStr = fmt.Sprintf(" (%d)", album.Year)
+		}
+		
+		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
+		if isActiveSection && v.state.HomeSelectedIndex == i {
+			line = v.styles.ActiveField.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		content.WriteString(line + "\n")
+	}
+	
+	if len(v.state.MostPlayedAlbums) > maxShow {
+		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.MostPlayedAlbums)-maxShow))
+	}
+	
+	return content.String()
+}
+
+// renderTopTracksSection renders the Top Tracks section
+func (v *MainView) renderTopTracksSection(width int) string {
+	var content strings.Builder
+	isActiveSection := v.state.HomeSelectedSection == 3
+	
+	// Section title with indicator if active
+	title := "🎵 Top Tracks"
+	if isActiveSection {
+		title = v.styles.ActiveField.Render(title)
+	} else {
+		title = v.styles.SectionTitle.Render(title)
+	}
+	content.WriteString(title + "\n")
+	
+	if len(v.state.TopTracks) == 0 {
+		content.WriteString("  No tracks loaded\n")
+		return content.String()
+	}
+	
+	// Show tracks with selection highlighting  
+	maxShow := 8 // More tracks since we have vertical space
+	if len(v.state.TopTracks) < maxShow {
+		maxShow = len(v.state.TopTracks)
+	}
+	
+	for i := 0; i < maxShow; i++ {
+		track := v.state.TopTracks[i]
+		
+		// Format duration (seconds to mm:ss)
+		duration := ""
+		if track.Duration > 0 {
+			minutes := track.Duration / 60
+			seconds := track.Duration % 60
+			duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
+		}
+		
+		line := fmt.Sprintf("%s - %s%s", track.Artist, track.Title, duration)
+		if isActiveSection && v.state.HomeSelectedIndex == i {
+			line = v.styles.ActiveField.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		content.WriteString(line + "\n")
+	}
+	
+	if len(v.state.TopTracks) > maxShow {
+		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.TopTracks)-maxShow))
+	}
 	
 	return content.String()
 }
@@ -433,81 +596,6 @@ func (v *MainView) formatArtistLine(artist models.Artist, selected bool) string 
 	return "  " + line
 }
 
-func (v *MainView) renderTracksTab() string {
-	if v.state.LoadingTracks {
-		return "🎵 Tracks\n\nLoading tracks..."
-	}
-	
-	if v.state.LoadingError != "" {
-		return fmt.Sprintf("🎵 Tracks\n\n❌ Error: %s\n\nPress 'r' to retry", v.state.LoadingError)
-	}
-	
-	if len(v.state.Tracks) == 0 {
-		return "🎵 Tracks\n\nNo tracks found.\n\nMake sure your Navidrome server is configured in the Config tab."
-	}
-	
-	var content strings.Builder
-	content.WriteString("🎵 Tracks\n\n")
-	
-	// Show instructions
-	content.WriteString("↑↓ Navigate • Enter to add to queue • R to refresh\n\n")
-	
-	// Render track list
-	startIdx := 0
-	endIdx := len(v.state.Tracks)
-	
-	// Limit visible items (simple pagination)
-	maxVisible := 15 // Fewer tracks per page since they take more space
-	if endIdx > maxVisible {
-		if v.state.SelectedTrackIndex >= maxVisible {
-			startIdx = v.state.SelectedTrackIndex - maxVisible + 1
-		}
-		endIdx = startIdx + maxVisible
-		if endIdx > len(v.state.Tracks) {
-			endIdx = len(v.state.Tracks)
-		}
-	}
-	
-	for i := startIdx; i < endIdx; i++ {
-		track := v.state.Tracks[i]
-		line := v.formatTrackLine(track, i == v.state.SelectedTrackIndex)
-		content.WriteString(line)
-		content.WriteString("\n")
-	}
-	
-	// Show pagination info if needed
-	if len(v.state.Tracks) > maxVisible {
-		content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d tracks", 
-			startIdx+1, endIdx, len(v.state.Tracks)))
-	}
-	
-	return content.String()
-}
-
-func (v *MainView) formatTrackLine(track models.Track, selected bool) string {
-	// Format: Track# Artist - Title (Album) [Duration]
-	trackNum := ""
-	if track.Track > 0 {
-		trackNum = fmt.Sprintf("%02d. ", track.Track)
-	}
-	
-	// Format duration (seconds to mm:ss)
-	duration := ""
-	if track.Duration > 0 {
-		minutes := track.Duration / 60
-		seconds := track.Duration % 60
-		duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
-	}
-	
-	line := fmt.Sprintf("%s%s - %s (%s)%s", 
-		trackNum, track.Artist, track.Title, track.Album, duration)
-	
-	if selected {
-		return v.styles.ActiveField.Render("> " + line)
-	}
-	
-	return "  " + line
-}
 
 func (v *MainView) renderPlaylistsTab() string {
 	return "📋 Playlists Tab\n\n(Coming soon)"

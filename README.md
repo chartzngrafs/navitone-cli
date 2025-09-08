@@ -20,11 +20,11 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 ### ✅ Fully Implemented
 - **MPV Audio Backend** - Professional-grade audio with universal format support and perfect seeking
 - **Core Architecture** - MVC pattern with clean separation of concerns  
-- **Tab Navigation** - 7 tabs: Home, Albums, Artists, Tracks, Playlists, Queue, Config
+- **Tab Navigation** - 6 tabs: Home, Albums, Artists, Playlists, Queue, Config
 - **Interactive Configuration** - Form-based config with field validation and connection testing
 - **Albums Tab** - Live browsing, modal track views, Alt+Enter quick queuing
 - **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart queue integration
-- **Tracks Tab** - Live track browsing with direct queue integration
+- **Interactive Home Tab** - Enhanced with 4 interactive sections: Recently Added Albums, Top Artists, Most Played Albums, and Top Tracks with ↑↓ navigation
 - **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking
 - **Modal System** - Seamless navigation flow with context-aware controls
 - **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
@@ -34,8 +34,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 
 ### 🏗️ In Development
 - **Playlists Tab** - User playlist management and creation
-- **Home Tab** - Proper curated sections (Recently Added/Played, Most Played, Random Albums)
-- **Sorting Options** - Sort controls for Albums, Artists, Tracks tabs
+- **Sorting Options** - Sort controls for Albums, Artists tabs  
 - **Advanced Queue Features** - Reorder tracks, shuffle mode, repeat modes
 
 ### 📋 Planned (Phase 2)
@@ -66,12 +65,12 @@ navitone-cli/
 ## 🎛️ Interface Sections
 
 ### 🏠 Home Tab
-- Library Overview - Current stats and queue status
-- Recently Added Albums (Partial - shows first albums, needs proper curation)
-- Top Artists by album count
-- Recently Played Albums (Not Implemented)
-- Most Played Albums (Not Implemented)  
-- Random Albums (Not Implemented)
+- **Interactive Navigation** - ↑↓ arrows to navigate through all sections seamlessly
+- **Recently Added Albums** - Latest 6 albums with Enter to view tracks modal
+- **Top Artists** - Top 5 artists by play count with Enter to view artist modal  
+- **Most Played Albums** - 6 most frequently played albums with modal access
+- **Top Tracks** - 8 popular tracks with Enter to play + queue remaining, Shift+Enter to queue only
+- **Smart Integration** - All sections support Enter/Shift+Enter patterns consistent with other tabs
 
 ### 💿 Albums
 - Live data from Navidrome server with pagination support
@@ -91,13 +90,11 @@ navitone-cli/
 - **Nested Navigation**: Artist → Albums → Tracks with seamless modal transitions
 - **Album Modal Features**: Enter = view tracks, Alt+Enter/A = queue all albums
 
-### 🎵 Tracks
-- Live track browsing from Navidrome (random tracks)
-- Format: `Track#. Artist - Title (Album) [Duration]`
-- ↑↓ navigation with selection highlighting
-- Enter to add track to queue
-- Sorting options (Not Implemented)
-- Search and filter capabilities (Not Implemented)
+### 🎵 Track Access
+- **Enhanced Home Tab** - Browse top tracks directly in Home tab with seamless navigation
+- **Album Modals** - Access all tracks from any album with detailed track listings
+- **Artist Modals** - Browse artist albums and access their tracks through nested navigation  
+- **Global Search** - Shift+S to search and find specific tracks across your entire library
 
 ### 📋 Playlists
 - **Not Implemented** - Currently shows "Coming soon"
@@ -186,19 +183,21 @@ The application will automatically download required Go dependencies:
 7. Press F3 to test Navidrome connection
 
 ### Browse Your Music Library
-1. Navigate to **Albums** tab - browse your album collection
+1. Navigate to **Home** tab - your music dashboard
+   - Use ↑↓ to navigate through 4 curated sections
+   - Enter to open modals (albums/artists) or play tracks
+   - Shift+Enter to queue tracks without playing
+   - Press R to refresh all home data
+2. Navigate to **Albums** tab - browse your album collection
    - Use ↑↓ to navigate, Enter to view tracks in modal
    - Alt+Enter or A to queue entire album immediately
    - In album modal: Enter to play track + queue remainder
    - Press R to refresh the list
-2. Navigate to **Artists** tab - browse by artist
+3. Navigate to **Artists** tab - browse by artist
    - See album counts and starred favorites (★)
    - Enter to view artist's albums in modal
    - Navigate albums → Enter to view tracks → play from any track
    - Alt+Enter or A to queue all albums from artist
-3. Navigate to **Tracks** tab - browse individual tracks
-   - Random tracks from your library
-   - Enter to add individual tracks to queue
 4. Navigate to **Queue** tab - manage your playback queue
    - X/Del to remove tracks, C to clear all
    - **✅ Enter/Space to play tracks with real audio**
@@ -286,18 +285,17 @@ go build -o bin/navitone ./cmd/navitone
 - [x] **Navidrome Integration** - Full API support for streaming and library management
 - [x] **Albums Tab** - Modal track views with enhanced navigation and quick queuing
 - [x] **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart integration
-- [x] **Tracks Tab** - Live browsing with direct queue integration
 - [x] **Queue Management** - Complete playback controls with volume and seeking
 - [x] **Modal System** - Intuitive navigation flow with context-aware controls  
 - [x] **Enhanced Keybindings** - Clean, conventional shortcuts without vim-style navigation
 - [x] **Enhanced Global Search** - Shift+S modal with intelligent pagination, dual-mode playback, and smart result limiting
+- [x] **Interactive Home Tab** - Enhanced with 4 curated sections and seamless ↑↓ navigation
 - [x] **Process Management** - Proper MPV lifecycle with graceful shutdown
 - [x] **Scrobbling Support** - Last.fm and ListenBrainz with Now Playing updates
 
 ### Phase 2 (Remaining Features)
 - [ ] **Playlists Tab** - User playlist management and creation
-- [ ] **Home Tab Curation** - Proper Recently Played, Most Played, Random sections
-- [ ] **Sorting Options** - Sort controls for Albums, Artists, Tracks tabs  
+- [ ] **Sorting Options** - Sort controls for Albums, Artists tabs
 - [ ] **Advanced Queue Features** - Reorder tracks, shuffle mode, repeat modes
 
 ### Phase 3 (Advanced Features)
@@ -335,4 +333,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Note**: Phase 1 core functionality is **complete**! The application now features a professional MPV-powered audio backend with universal format support, intuitive modal navigation, smart queue management, and clean keybindings. Ready for daily use with any Navidrome server.
 
-**Latest Update**: ✅ **Enhanced Global Search Complete** - Upgraded Shift+S global search with intelligent result limiting (5 per section), "MORE" pagination for browsing additional results, and dual-mode playback controls (Enter: play + queue remaining, Shift+Enter: queue only). Features smart navigation that prevents getting stuck on last items and seamless integration with existing modal workflows.
+**Latest Update**: ✅ **Interactive Home Tab Complete** - Removed redundant Tracks tab and transformed Home tab into an interactive music dashboard. Features 4 curated sections (Recently Added Albums, Top Artists, Most Played Albums, Top Tracks) with seamless ↑↓ navigation, Enter/Shift+Enter playback controls, and consistent modal integration. Includes initial data loading fix for immediate content display on startup.
