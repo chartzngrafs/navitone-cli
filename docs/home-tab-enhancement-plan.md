@@ -1,6 +1,6 @@
 # Home Tab Enhancement Implementation Plan
 
-## Status: Phase 1 Complete ✅ | Phase 2 Complete ✅
+## Status: Phase 1 Complete ✅ | Phase 2 Complete ✅ | Phase 3 Complete ✅
 
 ## Overview
 This document outlines the implementation plan for enhancing the Home tab and removing the redundant Tracks tab from Navitone-CLI.
@@ -133,19 +133,28 @@ Navigation: ↑↓/←→ to move between sections, Enter to select, Shift+Enter
    - Add visual indicators for selected section and selected item
    - Implement responsive layout (2x2 grid on wide screens, vertical on narrow)
 
-### Phase 3: API Integration for Play Count Data
+### Phase 3: API Integration for Play Count Data ✅ **COMPLETED**
 
-#### Navidrome API Endpoints to Use:
-1. **Most Played Albums**: `getAlbumList2` with `type=frequent`
-2. **Recently Added**: `getAlbumList2` with `type=newest` 
-3. **Top Tracks**: `getTopSongs` (if available) or aggregate from album data
-4. **Top Artists by Plays**: Aggregate play counts from artist's albums
+#### Navidrome API Endpoints Used:
+1. **Most Played Albums**: `getAlbumList2` with `type=frequent` ✅
+2. **Recently Added**: `getAlbumList2` with `type=newest` ✅
+3. **Top Tracks**: Album-based aggregation (more reliable than `getTopSongs`) ✅
+4. **Top Artists by Plays**: Aggregate play counts from artist's albums ✅
 
 #### Implementation Details:
-- Use existing `PlayCount` fields in API responses
-- Cache data to prevent excessive API calls
-- Refresh data when user navigates to Home tab
-- Handle cases where play count data is unavailable (fallback to album count)
+- ✅ Use existing `PlayCount` fields in API responses
+- ✅ Smart fallback logic: frequent → recent → newest for albums
+- ✅ Top Tracks: Get tracks from top 3 most played albums, sort by PlayCount
+- ✅ Top Artists: Aggregate PlayCount from up to 200 albums per artist
+- ✅ Handle cases where play count data is unavailable (graceful fallbacks)
+- ✅ Performance optimized: reduced API calls and removed verbose logging
+- ✅ Real-time data loading when user navigates to Home tab
+
+#### Key Discoveries:
+- Navidrome's `getTopSongs` API returns mostly 0 play counts
+- Album-based track aggregation provides much more accurate Top Tracks
+- `type=frequent` works well for Most Played Albums
+- Play count data is available and meaningful for albums and individual tracks
 
 ### Phase 4: User Interaction Implementation
 
@@ -208,26 +217,31 @@ Navigation: ↑↓/←→ to move between sections, Enter to select, Shift+Enter
    - Added vertical stacking layout with ↑↓ navigation consistency
    - Fixed initial loading issue - data now loads immediately on startup
 
-3. **Phase 3** (API Integration): ~3 hours
-   - Medium complexity, API work
-   - Handle various Navidrome configurations
+3. **Phase 3** (API Integration): ✅ **COMPLETED**
+   - Successfully integrated real play count data from Navidrome API
+   - Implemented proper API calls for each section with intelligent fallbacks
+   - Optimized performance and reduced loading times
+   - All sections now display meaningful, accurate play count-based data
 
 4. **Phase 4** (User Interaction): ~3 hours
    - Medium complexity, interaction logic
    - Integrate with existing patterns
 
-**Total Estimated Time**: ~12 hours
+**Total Estimated Time**: ~12 hours | **Actual Time**: ~9 hours
 
 ## Success Criteria
 
 - [x] **Phase 1 Complete**: Tracks tab completely removed
 - [x] **Phase 2 Complete**: Home tab displays 4 interactive sections
+- [x] **Phase 3 Complete**: Real play count data integration working
 - [x] Navigation works consistently across all sections (↑↓ only)
-- [x] Play count data displays accurately where available
+- [x] Play count data displays accurately with real Navidrome data
 - [x] Enter/Shift+Enter patterns work consistently
 - [x] No regression in existing functionality
 - [x] Initial loading issue resolved
-- [x] Performance remains responsive with large libraries
+- [x] Performance optimized and responsive with large libraries
+- [x] Smart API fallbacks handle various Navidrome configurations
+- [x] Top Tracks uses album-based aggregation for better accuracy
 
 ## Notes
 

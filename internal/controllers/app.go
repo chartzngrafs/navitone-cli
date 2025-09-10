@@ -3,6 +3,9 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -25,8 +28,33 @@ type App struct {
 	scrobbler       *scrobbling.Manager
 }
 
+// setupDebugLogging sets up file logging for debug output
+func setupDebugLogging() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return // If we can't get home dir, skip logging
+	}
+	
+	tmpDir := filepath.Join(homeDir, "tmp")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return // If we can't create tmp dir, skip logging
+	}
+	
+	logFile := filepath.Join(tmpDir, "navitone.log")
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return // If we can't open log file, skip logging
+	}
+	
+	log.SetOutput(file)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Printf("=== Navitone Debug Session Started ===")
+}
+
 // NewApp creates a new application instance
 func NewApp() *App {
+	// Set up debug logging to ~/tmp/navitone.log
+	setupDebugLogging()
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -35,13 +63,17 @@ func NewApp() *App {
 
 	state := &models.AppState{
 		CurrentTab: models.HomeTab,
-		Volume:     70,
+		Volume:     cfg.Audio.Volume,
 		Queue:      make([]models.Track, 0),
 		ConfigForm: models.NewConfigFormState(cfg),
 		Albums:      make([]models.Album, 0),
 		Artists:     make([]models.Artist, 0),
 		Playlists:   make([]models.Playlist, 0),
 		LogMessages: make([]string, 0),
+		
+		// Initialize albums pagination
+		AlbumsOffset:   0,
+		AlbumsHasMore:  true,
 		
 		// Initialize Home tab state
 		HomeSelectedSection:  0, // Start with Recently Added section
@@ -56,7 +88,7 @@ func NewApp() *App {
 
 	app := &App{
 		state: state,
-		view:  views.NewMainView(state),
+		view:  views.NewMainView(state, cfg.UI.Theme),
 	}
 
 	// Initialize Navidrome client if config is valid
@@ -74,6 +106,8 @@ func NewApp() *App {
 			audioManager.SetStateCallback(app.updateAudioState)
 			// Set up callback for log messages
 			audioManager.SetLogCallback(app.logMessage)
+			// Set initial volume from config
+			audioManager.SetVolume(float64(cfg.Audio.Volume) / 100.0)
 			app.logMessage("Audio manager initialized successfully")
 		} else {
 			app.logMessage(fmt.Sprintf("Failed to create audio manager: %v", err))
@@ -142,7 +176,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return a.handleMouseEvent(msg)
 	case tea.WindowSizeMsg:
-		a.view.SetSize(msg.Width, msg.Height)
+		// Debug: ignore invalid window size messages that might be causing the header to disappear
+		if msg.Width > 0 && msg.Height > 0 {
+			a.view.SetSize(msg.Width, msg.Height)
+		}
 		return a, nil
 	case ConnectionTestResult:
 		// Handle connection test result
@@ -160,7 +197,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			a.state.LoadingError = msg.Error.Error()
 		} else {
-			a.state.Albums = msg.Albums
+			if msg.Append {
+				// Append new albums to existing ones
+				a.state.Albums = append(a.state.Albums, msg.Albums...)
+				a.state.AlbumsOffset = msg.Offset + len(msg.Albums)
+			} else {
+				// Replace existing albums
+				a.state.Albums = msg.Albums
+				a.state.AlbumsOffset = len(msg.Albums)
+			}
+			a.state.AlbumsHasMore = msg.HasMore
 			a.state.LoadingError = ""
 		}
 		return a, nil
@@ -182,15 +228,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add all tracks to queue
 			if a.audioManager != nil {
 				a.audioManager.AddTracksToQueue(msg.Tracks)
-				// Sync state immediately
-				a.state.Queue = a.audioManager.GetQueue()
-				a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
-				a.state.IsPlaying = a.audioManager.IsPlaying()
+				// State will be updated via the audio manager callback
+				a.logMessage(fmt.Sprintf("Added album to queue (%d tracks)", len(msg.Tracks)))
 			} else {
 				a.state.Queue = append(a.state.Queue, msg.Tracks...)
+				a.logMessage(fmt.Sprintf("Added album to queue (%d tracks, total: %d)", len(msg.Tracks), len(a.state.Queue)))
 			}
 			a.state.LoadingError = ""
-			a.logMessage(fmt.Sprintf("Added album to queue (%d tracks, total: %d)", len(msg.Tracks), len(a.state.Queue)))
 		}
 		return a, nil
 	case ArtistTracksLoadResult:
@@ -201,15 +245,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add all tracks to queue
 			if a.audioManager != nil {
 				a.audioManager.AddTracksToQueue(msg.Tracks)
-				// Sync state immediately
-				a.state.Queue = a.audioManager.GetQueue()
-				a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
-				a.state.IsPlaying = a.audioManager.IsPlaying()
+				// State will be updated via the audio manager callback
+				a.logMessage(fmt.Sprintf("Added artist tracks to queue (%d tracks)", len(msg.Tracks)))
 			} else {
 				a.state.Queue = append(a.state.Queue, msg.Tracks...)
+				a.logMessage(fmt.Sprintf("Added artist tracks to queue (%d tracks, total: %d)", len(msg.Tracks), len(a.state.Queue)))
 			}
 			a.state.LoadingError = ""
-			a.logMessage(fmt.Sprintf("Added artist tracks to queue (%d tracks, total: %d)", len(msg.Tracks), len(a.state.Queue)))
 		}
 		return a, nil
 	case AlbumTracksModalResult:
@@ -358,6 +400,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				newVolume = 1.0
 			}
 			a.audioManager.SetVolume(newVolume)
+			a.state.Volume = int(newVolume * 100) // Sync UI state
 		}
 		return a, nil
 	case "shift+down":
@@ -369,7 +412,19 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				newVolume = 0.0
 			}
 			a.audioManager.SetVolume(newVolume)
+			a.state.Volume = int(newVolume * 100) // Sync UI state
 		}
+		return a, nil
+	case "shift+s", "S":
+		// Global: Shift+S - Open search modal
+		a.state.ShowSearchModal = true
+		a.state.SearchQuery = ""
+		a.state.SearchResults = models.SearchResults{}
+		a.state.SelectedSearchIndex = 0
+		a.state.LoadingSearchResults = false
+		a.state.SearchArtistsOffset = 0
+		a.state.SearchAlbumsOffset = 0
+		a.state.SearchTracksOffset = 0
 		return a, nil
 	}
 
@@ -393,17 +448,6 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "shift+s", "S":
-		// Global: Shift+S - Open search modal
-		a.state.ShowSearchModal = true
-		a.state.SearchQuery = ""
-		a.state.SearchResults = models.SearchResults{}
-		a.state.SelectedSearchIndex = 0
-		a.state.LoadingSearchResults = false
-		a.state.SearchArtistsOffset = 0
-		a.state.SearchAlbumsOffset = 0
-		a.state.SearchTracksOffset = 0
-		return a, nil
 	case "ctrl+c", "q":
 		return a, a.cleanup()
 	case "tab":
@@ -885,13 +929,28 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		// Refresh albums
 		return a, a.loadAlbums()
+	case "m":
+		// Load more albums
+		if a.state.AlbumsHasMore && !a.state.LoadingAlbums {
+			return a, a.loadMoreAlbums()
+		}
 	}
 
 	return a, nil
 }
 
-// loadAlbums loads albums from Navidrome
+// loadAlbums loads albums from Navidrome (initial load - replaces existing albums)
 func (a *App) loadAlbums() tea.Cmd {
+	return a.loadAlbumsWithOffset(0, false)
+}
+
+// loadMoreAlbums loads more albums from Navidrome (appends to existing albums)
+func (a *App) loadMoreAlbums() tea.Cmd {
+	return a.loadAlbumsWithOffset(a.state.AlbumsOffset, true)
+}
+
+// loadAlbumsWithOffset loads albums with a specific offset
+func (a *App) loadAlbumsWithOffset(offset int, append bool) tea.Cmd {
 	if a.navidromeClient == nil {
 		return nil
 	}
@@ -903,9 +962,9 @@ func (a *App) loadAlbums() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		resp, err := a.navidromeClient.GetAlbums(ctx, 50, 0) // Get first 50 albums
+		resp, err := a.navidromeClient.GetAlbums(ctx, 50, offset)
 		if err != nil {
-			return AlbumsLoadResult{Error: err}
+			return AlbumsLoadResult{Error: err, Append: append}
 		}
 
 		// Convert Navidrome albums to our model
@@ -925,7 +984,15 @@ func (a *App) loadAlbums() tea.Cmd {
 			}
 		}
 
-		return AlbumsLoadResult{Albums: albums}
+		// Check if there are more albums (if we got exactly 50, there might be more)
+		hasMore := len(albums) == 50
+
+		return AlbumsLoadResult{
+			Albums:  albums,
+			Append:  append,
+			HasMore: hasMore,
+			Offset:  offset,
+		}
 	})
 }
 
@@ -986,6 +1053,7 @@ func (a *App) loadHomeData() tea.Cmd {
 			return homeData
 		}
 		
+		
 		// Convert recently added albums
 		homeData.RecentlyAdded = make([]models.Album, len(recentResp.SubsonicResponse.AlbumList2.Album))
 		for i, album := range recentResp.SubsonicResponse.AlbumList2.Album {
@@ -998,6 +1066,7 @@ func (a *App) loadHomeData() tea.Cmd {
 				Genre:      album.Genre,
 				Duration:   album.Duration,
 				TrackCount: album.SongCount,
+				PlayCount:  album.PlayCount,
 				CreatedAt:  album.Created,
 				CoverArt:   album.CoverArt,
 			}
@@ -1026,69 +1095,147 @@ func (a *App) loadHomeData() tea.Cmd {
 				Genre:      album.Genre,
 				Duration:   album.Duration,
 				TrackCount: album.SongCount,
+				PlayCount:  album.PlayCount,
 				CreatedAt:  album.Created,
 				CoverArt:   album.CoverArt,
 			}
 		}
 
-		// Load Top Tracks
-		tracksResp, err := a.navidromeClient.GetTopTracks(ctx, 10)
-		if err != nil {
-			// Fallback to random songs if top tracks fails
-			tracksResp, err = a.navidromeClient.GetSongs(ctx, 10, 0)
+		// Load Top Tracks - use tracks from most played albums since GetTopTracks returns mostly 0s
+		var allTopTracks []models.Track
+		
+		// Get tracks from most played albums (more reliable than GetTopTracks)
+		if len(homeData.MostPlayed) > 0 {
+			// Get tracks from top 3 most played albums (reduced from 5 for performance)
+			maxAlbums := 3
+			if len(homeData.MostPlayed) < maxAlbums {
+				maxAlbums = len(homeData.MostPlayed)
+			}
+			
+			for i := 0; i < maxAlbums; i++ {
+				albumTracksResp, albumErr := a.navidromeClient.GetAlbumTracks(ctx, homeData.MostPlayed[i].ID)
+				if albumErr == nil {
+					// Convert album tracks
+					for _, song := range albumTracksResp.SubsonicResponse.SongsByGenre.Song {
+						allTopTracks = append(allTopTracks, models.Track{
+							ID:        song.ID,
+							Title:     song.Title,
+							Artist:    song.Artist,
+							ArtistID:  song.ArtistID,
+							Album:     song.Album,
+							AlbumID:   song.AlbumID,
+							Genre:     song.Genre,
+							Year:      song.Year,
+							Duration:  song.Duration,
+							Track:     song.Track,
+							Disc:      song.DiscNumber,
+							Size:      song.Size,
+							Suffix:    song.Suffix,
+							BitRate:   song.BitRate,
+							PlayCount: song.PlayCount,
+							Path:      song.Path,
+						})
+					}
+				}
+			}
+		}
+		
+		// Sort by play count (descending) and take top 10
+		if len(allTopTracks) > 0 {
+			for i := 0; i < len(allTopTracks)-1; i++ {
+				for j := 0; j < len(allTopTracks)-i-1; j++ {
+					if allTopTracks[j].PlayCount < allTopTracks[j+1].PlayCount {
+						allTopTracks[j], allTopTracks[j+1] = allTopTracks[j+1], allTopTracks[j]
+					}
+				}
+			}
+			maxTracks := 10
+			if len(allTopTracks) < maxTracks {
+				maxTracks = len(allTopTracks)
+			}
+			homeData.TopTracks = allTopTracks[:maxTracks]
+		} else {
+			// Final fallback to random songs
+			tracksResp, err := a.navidromeClient.GetSongs(ctx, 10, 0)
 			if err != nil {
 				homeData.Error = err
 				return homeData
 			}
-		}
-		
-		// Convert top tracks
-		homeData.TopTracks = make([]models.Track, len(tracksResp.SubsonicResponse.SongsByGenre.Song))
-		for i, song := range tracksResp.SubsonicResponse.SongsByGenre.Song {
-			homeData.TopTracks[i] = models.Track{
-				ID:       song.ID,
-				Title:    song.Title,
-				Artist:   song.Artist,
-				ArtistID: song.ArtistID,
-				Album:    song.Album,
-				AlbumID:  song.AlbumID,
-				Genre:    song.Genre,
-				Year:     song.Year,
-				Duration: song.Duration,
-				Track:    song.Track,
-				Disc:     song.DiscNumber,
-				Size:     song.Size,
-				Suffix:   song.Suffix,
-				BitRate:  song.BitRate,
-				Path:     song.Path,
+			// Convert random tracks
+			homeData.TopTracks = make([]models.Track, len(tracksResp.SubsonicResponse.SongsByGenre.Song))
+			for i, song := range tracksResp.SubsonicResponse.SongsByGenre.Song {
+				homeData.TopTracks[i] = models.Track{
+					ID:        song.ID,
+					Title:     song.Title,
+					Artist:    song.Artist,
+					ArtistID:  song.ArtistID,
+					Album:     song.Album,
+					AlbumID:   song.AlbumID,
+					Genre:     song.Genre,
+					Year:      song.Year,
+					Duration:  song.Duration,
+					Track:     song.Track,
+					Disc:      song.DiscNumber,
+					Size:      song.Size,
+					Suffix:    song.Suffix,
+					BitRate:   song.BitRate,
+					PlayCount: song.PlayCount,
+					Path:      song.Path,
+				}
 			}
 		}
 
-		// Load Top Artists (aggregate from albums)
+		// Load Top Artists (aggregate play counts from albums)
 		artistsResp, err := a.navidromeClient.GetArtists(ctx)
 		if err != nil {
 			homeData.Error = err
 			return homeData
 		}
 		
-		// Convert artists and sort by play count (approximate with album count for now)
+		// Create a map to aggregate play counts per artist
+		artistPlayCounts := make(map[string]int)
 		var allArtists []models.Artist
+		
+		// First, collect all artists
 		for _, index := range artistsResp.SubsonicResponse.Artists.Index {
 			for _, artist := range index.Artist {
 				allArtists = append(allArtists, models.Artist{
 					ID:         artist.ID,
 					Name:       artist.Name,
 					AlbumCount: artist.AlbumCount,
+					PlayCount:  0, // Will be calculated below
 					StarredAt:  artist.Starred,
 				})
+				artistPlayCounts[artist.ID] = 0
 			}
 		}
 		
-		// Sort artists by album count (descending) and take top 5
-		// TODO: In future, aggregate actual play counts from albums
+		// Get all albums to aggregate play counts per artist
+		// We'll use the "frequent" albums to get play count data efficiently
+		allAlbumsResp, err := a.navidromeClient.GetAlbumsByType(ctx, "frequent", 200, 0)
+		if err == nil {
+			// Aggregate play counts for each artist from their albums
+			for _, album := range allAlbumsResp.SubsonicResponse.AlbumList2.Album {
+				if count, exists := artistPlayCounts[album.ArtistID]; exists {
+					artistPlayCounts[album.ArtistID] = count + album.PlayCount
+				}
+			}
+		}
+		
+		// Update artists with aggregated play counts
+		for i := range allArtists {
+			if count, exists := artistPlayCounts[allArtists[i].ID]; exists {
+				allArtists[i].PlayCount = count
+			}
+		}
+		
+		// Sort artists by play count (descending), fallback to album count
 		for i := 0; i < len(allArtists)-1; i++ {
 			for j := 0; j < len(allArtists)-i-1; j++ {
-				if allArtists[j].AlbumCount < allArtists[j+1].AlbumCount {
+				// Primary sort by play count, secondary by album count
+				leftScore := allArtists[j].PlayCount*1000 + allArtists[j].AlbumCount
+				rightScore := allArtists[j+1].PlayCount*1000 + allArtists[j+1].AlbumCount
+				if leftScore < rightScore {
 					allArtists[j], allArtists[j+1] = allArtists[j+1], allArtists[j]
 				}
 			}
@@ -1245,10 +1392,7 @@ type ArtistTracksLoadResult struct {
 func (a *App) addTrackToQueue(track models.Track) tea.Cmd {
 	if a.audioManager != nil {
 		a.audioManager.AddToQueue(track)
-		// Sync state immediately
-		a.state.Queue = a.audioManager.GetQueue()
-		a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
-		a.state.IsPlaying = a.audioManager.IsPlaying()
+		// State will be updated via the audio manager callback
 	} else {
 		a.state.Queue = append(a.state.Queue, track)
 	}
@@ -1307,8 +1451,11 @@ func (a *App) handleQueueKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // Message types for async operations
 type AlbumsLoadResult struct {
-	Albums []models.Album
-	Error  error
+	Albums  []models.Album
+	Error   error
+	Append  bool // Whether to append albums or replace existing ones
+	HasMore bool // Whether there are more albums to load
+	Offset  int  // The offset used for this load
 }
 
 type ArtistsLoadResult struct {
@@ -1477,6 +1624,12 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			selectedTrack := a.state.AlbumTracks[selectedIndex]
 			remainingTracks := a.state.AlbumTracks[selectedIndex:]
 			
+			// Close the modal first to prevent UI interference
+			a.state.ShowAlbumModal = false
+			a.state.SelectedAlbum = nil
+			a.state.AlbumTracks = nil
+			a.state.SelectedModalIndex = 0
+			
 			if a.audioManager != nil {
 				// Clear current queue and add the track selection
 				a.audioManager.ClearQueue()
@@ -1484,15 +1637,13 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// Start playing the first track (selected one)
 				a.audioManager.PlayTrackAtIndex(0)
 				
-				// Let normal Bubble Tea update cycle handle state sync to prevent race conditions during modal closing
-				
 				// Log the action for user feedback
 				trackNum := selectedTrack.Track
 				if trackNum == 0 {
 					trackNum = selectedIndex + 1
 				}
 				a.logMessage(fmt.Sprintf("Playing track %d: %s - %s (%d tracks queued)", 
-					trackNum, selectedTrack.Artist, selectedTrack.Title, len(a.state.Queue)))
+					trackNum, selectedTrack.Artist, selectedTrack.Title, len(remainingTracks)))
 			} else {
 				// Fallback if audio manager not available
 				a.state.Queue = remainingTracks
@@ -1507,12 +1658,6 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.logMessage(fmt.Sprintf("Playing: %s - %s (from track %d)", 
 					selectedTrack.Artist, selectedTrack.Title, trackNum))
 			}
-			
-			// Close the modal after starting playback
-			a.state.ShowAlbumModal = false
-			a.state.SelectedAlbum = nil
-			a.state.AlbumTracks = nil
-			a.state.SelectedModalIndex = 0
 			
 			return a, nil
 		} else if a.state.ShowArtistModal && a.state.SelectedModalIndex < len(a.state.ArtistAlbums) {
@@ -1532,14 +1677,12 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.ShowAlbumModal && len(a.state.AlbumTracks) > 0 {
 			if a.audioManager != nil {
 				a.audioManager.AddTracksToQueue(a.state.AlbumTracks)
-				// Sync state immediately
-				a.state.Queue = a.audioManager.GetQueue()
-				a.state.CurrentTrack = a.audioManager.GetCurrentTrack()
-				a.state.IsPlaying = a.audioManager.IsPlaying()
+				// State will be updated via the audio manager callback
+				a.logMessage(fmt.Sprintf("Added %d tracks to queue", len(a.state.AlbumTracks)))
 			} else {
 				a.state.Queue = append(a.state.Queue, a.state.AlbumTracks...)
+				a.logMessage(fmt.Sprintf("Added %d tracks to queue (total: %d)", len(a.state.AlbumTracks), len(a.state.Queue)))
 			}
-			a.logMessage(fmt.Sprintf("Added %d tracks to queue (total: %d)", len(a.state.AlbumTracks), len(a.state.Queue)))
 		} else if a.state.ShowArtistModal && len(a.state.ArtistAlbums) > 0 {
 			// Add all albums from this artist to queue
 			totalTracks := 0

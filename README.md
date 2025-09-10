@@ -24,7 +24,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Interactive Configuration** - Form-based config with field validation and connection testing
 - **Albums Tab** - Live browsing, modal track views, Alt+Enter quick queuing
 - **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart queue integration
-- **Interactive Home Tab** - Enhanced with 4 interactive sections: Recently Added Albums, Top Artists, Most Played Albums, and Top Tracks with ↑↓ navigation
+- **Interactive Home Tab** - Enhanced with 4 interactive sections: Recently Added Albums, Top Artists, Most Played Albums, and Top Tracks with ↑↓ navigation and real play count data
 - **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking
 - **Modal System** - Seamless navigation flow with context-aware controls
 - **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
@@ -66,19 +66,22 @@ navitone-cli/
 
 ### 🏠 Home Tab
 - **Interactive Navigation** - ↑↓ arrows to navigate through all sections seamlessly
-- **Recently Added Albums** - Latest 6 albums with Enter to view tracks modal
-- **Top Artists** - Top 5 artists by play count with Enter to view artist modal  
-- **Most Played Albums** - 6 most frequently played albums with modal access
-- **Top Tracks** - 8 popular tracks with Enter to play + queue remaining, Shift+Enter to queue only
+- **Recently Added Albums** - Latest 8 albums with real play counts, Enter to view tracks modal
+- **Top Artists** - Top 5 artists by aggregated play count with Enter to view artist modal  
+- **Most Played Albums** - 8 most frequently played albums sorted by actual play count with modal access
+- **Top Tracks** - 10 most played individual tracks from top albums with Enter to play + queue remaining, Shift+Enter to queue only
 - **Smart Integration** - All sections support Enter/Shift+Enter patterns consistent with other tabs
+- **Real Data** - All sections display genuine play count data from your Navidrome server
 
 ### 💿 Albums
-- Live data from Navidrome server with pagination support
+- Live data from Navidrome server with infinite pagination support
 - Format: `[Year] Artist - Album (Track count)`
 - ↑↓ navigation with visual selection highlighting
 - **Enter** - Opens album tracks modal with detailed track listing
 - **Alt+Enter/A** - Queue entire album immediately (bypass modal)
 - **R** - Refresh albums list, maintains selection position
+- **M** - Load more albums (loads next 50 when available)
+- **Smart Pagination**: Shows "more available - press M to load" when additional albums exist
 - **Modal Features**: Track-by-track navigation, play from any track, queue remainder
 
 ### 🎤 Artists  
@@ -193,6 +196,7 @@ The application will automatically download required Go dependencies:
    - Alt+Enter or A to queue entire album immediately
    - In album modal: Enter to play track + queue remainder
    - Press R to refresh the list
+   - Press M to load more albums (loads next 50 when available)
 3. Navigate to **Artists** tab - browse by artist
    - See album counts and starred favorites (★)
    - Enter to view artist's albums in modal
@@ -289,7 +293,7 @@ go build -o bin/navitone ./cmd/navitone
 - [x] **Modal System** - Intuitive navigation flow with context-aware controls  
 - [x] **Enhanced Keybindings** - Clean, conventional shortcuts without vim-style navigation
 - [x] **Enhanced Global Search** - Shift+S modal with intelligent pagination, dual-mode playback, and smart result limiting
-- [x] **Interactive Home Tab** - Enhanced with 4 curated sections and seamless ↑↓ navigation
+- [x] **Interactive Home Tab** - Enhanced with 4 curated sections, seamless ↑↓ navigation, and real play count data integration
 - [x] **Process Management** - Proper MPV lifecycle with graceful shutdown
 - [x] **Scrobbling Support** - Last.fm and ListenBrainz with Now Playing updates
 
@@ -323,6 +327,26 @@ go build -o bin/navitone ./cmd/navitone
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## 🐛 Bug Fixes & Known Issues
+
+### Navigation Header Disappearing (RESOLVED ✅)
+**Issue**: Navigation header would disappear after playing tracks from modal windows (Albums/Artists modals).
+
+**Root Cause**: The MPV audio backend's player module (`renderPlayer()`) was interfering with the UI render cycle during modal-to-playback state transitions. When tracks started playing from modals, rapid state updates caused the player module to render with inconsistent state, corrupting the overall layout.
+
+**Technical Fix**: 
+- Removed player module from main render sequence to eliminate interference
+- Implemented comprehensive queue state synchronization via audio manager callbacks  
+- Added defensive rendering protections for invalid window dimensions
+- Fixed ANSI color code handling in queue display formatting
+
+**Files Modified**:
+- `internal/views/main.go`: Removed player module render, fixed queue formatting
+- `internal/audio/mpv/manager.go`: Enhanced state change notifications
+- `internal/controllers/app.go`: Improved queue synchronization, modal state management
+
+**Impact**: Modal navigation and track playback now work seamlessly without UI corruption.
+
 ## 🙏 Acknowledgments
 
 - [Navidrome](https://github.com/navidrome/navidrome) - Excellent music server
@@ -333,4 +357,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Note**: Phase 1 core functionality is **complete**! The application now features a professional MPV-powered audio backend with universal format support, intuitive modal navigation, smart queue management, and clean keybindings. Ready for daily use with any Navidrome server.
 
-**Latest Update**: ✅ **Interactive Home Tab Complete** - Removed redundant Tracks tab and transformed Home tab into an interactive music dashboard. Features 4 curated sections (Recently Added Albums, Top Artists, Most Played Albums, Top Tracks) with seamless ↑↓ navigation, Enter/Shift+Enter playback controls, and consistent modal integration. Includes initial data loading fix for immediate content display on startup.
+**Latest Update**: ✅ **Critical UI Bug Fixes** - Fixed persistent navigation header disappearing issue that occurred after playing tracks from modal windows. Root cause was the player module render interfering with the UI state during modal-to-playback transitions. Implemented comprehensive queue synchronization fixes ensuring tracks are consistently visible across all contexts. Fixed ANSI color code display issues in queue. Enhanced queue management with proper state callbacks and defensive rendering protections.

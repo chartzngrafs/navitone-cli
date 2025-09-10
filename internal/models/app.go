@@ -47,6 +47,7 @@ type Album struct {
 	Genre       string    `json:"genre"`
 	Duration    int       `json:"duration"`
 	TrackCount  int       `json:"songCount"`
+	PlayCount   int       `json:"playCount"`
 	CreatedAt   time.Time `json:"created"`
 	CoverArt    string    `json:"coverArt,omitempty"`
 }
@@ -56,26 +57,28 @@ type Artist struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	AlbumCount int    `json:"albumCount"`
+	PlayCount  int    `json:"playCount"`  // Aggregated play count from all albums
 	StarredAt  *time.Time `json:"starred,omitempty"`
 }
 
 // Track represents a music track
 type Track struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Artist   string `json:"artist"`
-	ArtistID string `json:"artistId"`
-	Album    string `json:"album"`
-	AlbumID  string `json:"albumId"`
-	Genre    string `json:"genre"`
-	Year     int    `json:"year"`
-	Duration int    `json:"duration"`
-	Track    int    `json:"track"`
-	Disc     int    `json:"discNumber"`
-	Size     int64  `json:"size"`
-	Suffix   string `json:"suffix"`
-	BitRate  int    `json:"bitRate"`
-	Path     string `json:"path"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Artist    string `json:"artist"`
+	ArtistID  string `json:"artistId"`
+	Album     string `json:"album"`
+	AlbumID   string `json:"albumId"`
+	Genre     string `json:"genre"`
+	Year      int    `json:"year"`
+	Duration  int    `json:"duration"`
+	Track     int    `json:"track"`
+	Disc      int    `json:"discNumber"`
+	Size      int64  `json:"size"`
+	Suffix    string `json:"suffix"`
+	BitRate   int    `json:"bitRate"`
+	PlayCount int    `json:"playCount"`
+	Path      string `json:"path"`
 }
 
 // Playlist represents a user playlist
@@ -117,6 +120,10 @@ type AppState struct {
 	LoadingAlbums  bool
 	LoadingArtists bool
 	LoadingError   string
+	
+	// Albums pagination
+	AlbumsOffset   int  // Current offset for loaded albums
+	AlbumsHasMore  bool // Whether there are more albums to load
 	
 	// Selection state
 	SelectedAlbumIndex int

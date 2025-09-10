@@ -571,9 +571,7 @@ func (m *Manager) shuffleSlice(tracks []models.Track) {
 func (m *Manager) notifyStateChange() {
 	if m.stateCallback != nil {
 		go func() {
-			// The callback will need to be implemented to update the AppState
-			// For now, we just call it without parameters
-			// m.stateCallback(updatedState)
+			m.stateCallback(nil)
 		}()
 	}
 }

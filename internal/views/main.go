@@ -13,100 +13,44 @@ type MainView struct {
 	state  *models.AppState
 	width  int
 	height int
-	styles Styles
+	theme  Theme
+	styles ThemedStyles
 }
 
-// Styles contains styling for the UI
-type Styles struct {
-	TabActive        lipgloss.Style
-	TabInactive      lipgloss.Style
-	Header           lipgloss.Style
-	Content          lipgloss.Style
-	Footer           lipgloss.Style
-	Help             lipgloss.Style
-	SectionTitle     lipgloss.Style
-	ActiveField      lipgloss.Style
-	ActiveEditField  lipgloss.Style
-	InactiveField    lipgloss.Style
-	ErrorMessage     lipgloss.Style
-	SuccessMessage   lipgloss.Style
-	HelpText         lipgloss.Style
-}
 
 // NewMainView creates a new main view
-func NewMainView(state *models.AppState) *MainView {
-	styles := Styles{
-		TabActive: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("63")).
-			Padding(0, 1),
-		TabInactive: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Background(lipgloss.Color("235")).
-			Padding(0, 1),
-		Header: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("57")).
-			Padding(0, 1).
-			Width(100),
-		Content: lipgloss.NewStyle().
-			Padding(1).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("238")),
-		Footer: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Background(lipgloss.Color("235")).
-			Padding(0, 1),
-		Help: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("63")).
-			Padding(1).
-			Background(lipgloss.Color("235")),
-		SectionTitle: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("33")),
-		ActiveField: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("63")),
-		ActiveEditField: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("196")),
-		InactiveField: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")),
-		ErrorMessage: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
-			Bold(true),
-		SuccessMessage: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("46")).
-			Bold(true),
-		HelpText: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Italic(true),
-	}
+func NewMainView(state *models.AppState, themeVariant string) *MainView {
+	theme := NewTheme(themeVariant)
+	styles := NewThemedStyles(theme)
 
 	return &MainView{
 		state:  state,
+		theme:  theme,
 		styles: styles,
+		width:  80,  // Default width
+		height: 24,  // Default height
 	}
 }
 
 // SetSize updates the view dimensions
 func (v *MainView) SetSize(width, height int) {
+	// Debug logging to track size changes
+	if width == 0 || height == 0 {
+		// Ignore invalid dimensions completely
+		return
+	}
 	v.width = width
 	v.height = height
 }
 
 // Render returns the complete view string
 func (v *MainView) Render() string {
-	if v.width == 0 || v.height == 0 {
-		// Don't show "Loading..." - instead render with fallback dimensions
-		// This prevents the UI from disappearing when dimensions are temporarily reset
-		v.width = 80   // Fallback width
-		v.height = 24  // Fallback height
+	// Ensure we always have valid dimensions
+	if v.width <= 0 {
+		v.width = 80
+	}
+	if v.height <= 0 {
+		v.height = 24
 	}
 	
 
@@ -123,9 +67,6 @@ func (v *MainView) Render() string {
 
 	// Footer with playback controls
 	sections = append(sections, v.renderFooter())
-	
-	// Player module above log
-	sections = append(sections, v.renderPlayer())
 	
 	// Log area at the bottom
 	sections = append(sections, v.renderLogArea())
@@ -162,14 +103,39 @@ func (v *MainView) renderHeader() string {
 	}
 
 	tabBar := strings.Join(tabs, "")
-	return v.styles.Header.Width(v.width).Render(tabBar)
+	
+	// Ensure header has a valid width
+	headerWidth := v.width
+	if headerWidth <= 0 {
+		headerWidth = 80 // Fallback width
+	}
+	
+	return v.styles.Header.Width(headerWidth).Render(tabBar)
 }
 
 // renderContent creates the main content area based on current tab
 func (v *MainView) renderContent() string {
-	contentHeight := v.height - 8 // Account for header, footer, player, and log area plus padding
+	// Ensure we have valid dimensions
+	width := v.width
+	height := v.height
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = 24
+	}
+	
+	contentHeight := height - 6 // Account for header, footer, and log area
+	contentWidth := width - 2
+	if contentWidth < 10 {
+		contentWidth = 10 // Minimum content width
+	}
+	if contentHeight < 5 {
+		contentHeight = 5 // Minimum content height
+	}
+	
 	content := v.styles.Content.
-		Width(v.width - 2).
+		Width(contentWidth).
 		Height(contentHeight)
 
 	switch v.state.CurrentTab {
@@ -193,8 +159,15 @@ func (v *MainView) renderContent() string {
 // renderFooter creates a simple footer with basic info (player module handles playback details)
 func (v *MainView) renderFooter() string {
 	// Simple footer with just navigation hints since player module handles playback
-	footer := "Tab/Shift+Tab: Switch tabs | Ctrl+C/q: Quit"
-	return v.styles.Footer.Width(v.width).Render(footer)
+	footer := "Tab/Shift+Tab: Switch tabs | Shift+S: Global Search | Ctrl+C/q: Quit"
+	
+	// Ensure footer has a valid width
+	footerWidth := v.width
+	if footerWidth <= 0 {
+		footerWidth = 80 // Fallback width
+	}
+	
+	return v.styles.Footer.Width(footerWidth).Render(footer)
 }
 
 // Tab-specific render functions
@@ -263,7 +236,7 @@ func (v *MainView) renderRecentlyAddedSection(width int) string {
 	// Section title with indicator if active
 	title := "💿 Recently Added Albums"
 	if isActiveSection {
-		title = v.styles.ActiveField.Render(title)
+		title = v.styles.ActiveSectionTitle.Render(title)
 	} else {
 		title = v.styles.SectionTitle.Render(title)
 	}
@@ -311,7 +284,7 @@ func (v *MainView) renderTopArtistsSection(width int) string {
 	// Section title with indicator if active
 	title := "🎤 Top Artists"
 	if isActiveSection {
-		title = v.styles.ActiveField.Render(title)
+		title = v.styles.ActiveSectionTitle.Render(title)
 	} else {
 		title = v.styles.SectionTitle.Render(title)
 	}
@@ -364,7 +337,7 @@ func (v *MainView) renderMostPlayedAlbumsSection(width int) string {
 	// Section title with indicator if active
 	title := "🔥 Most Played Albums"
 	if isActiveSection {
-		title = v.styles.ActiveField.Render(title)
+		title = v.styles.ActiveSectionTitle.Render(title)
 	} else {
 		title = v.styles.SectionTitle.Render(title)
 	}
@@ -412,7 +385,7 @@ func (v *MainView) renderTopTracksSection(width int) string {
 	// Section title with indicator if active
 	title := "🎵 Top Tracks"
 	if isActiveSection {
-		title = v.styles.ActiveField.Render(title)
+		title = v.styles.ActiveSectionTitle.Render(title)
 	} else {
 		title = v.styles.SectionTitle.Render(title)
 	}
@@ -472,8 +445,12 @@ func (v *MainView) renderAlbumsTab() string {
 	var content strings.Builder
 	content.WriteString("💿 Albums\n\n")
 	
-	// Show instructions
-	content.WriteString("↑↓ Navigate • Enter to view tracks • Alt+Enter/A to queue album • R to refresh\n\n")
+	// Show instructions with MORE option if available
+	instructions := "↑↓ Navigate • Enter to view tracks • Alt+Enter/A to queue album • R to refresh"
+	if v.state.AlbumsHasMore {
+		instructions += " • M for more"
+	}
+	content.WriteString(instructions + "\n\n")
 	
 	// Render album list
 	startIdx := 0
@@ -498,10 +475,20 @@ func (v *MainView) renderAlbumsTab() string {
 		content.WriteString("\n")
 	}
 	
-	// Show pagination info if needed
+	// Show pagination info
 	if len(v.state.Albums) > maxVisible {
-		content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d albums", 
-			startIdx+1, endIdx, len(v.state.Albums)))
+		paginationInfo := fmt.Sprintf("\nShowing %d-%d of %d albums", 
+			startIdx+1, endIdx, len(v.state.Albums))
+		if v.state.AlbumsHasMore {
+			paginationInfo += " (more available - press M to load)"
+		}
+		content.WriteString(paginationInfo)
+	} else if len(v.state.Albums) > 0 {
+		albumInfo := fmt.Sprintf("\n%d albums", len(v.state.Albums))
+		if v.state.AlbumsHasMore {
+			albumInfo += " (more available - press M to load)"
+		}
+		content.WriteString(albumInfo)
 	}
 	
 	return content.String()
@@ -635,9 +622,6 @@ func (v *MainView) renderQueueTab() string {
 }
 
 func (v *MainView) formatQueueLine(track models.Track, index int, selected bool) string {
-	// Format: #. Artist - Title (Album) [Duration]
-	queueNum := fmt.Sprintf("%2d. ", index+1)
-	
 	// Format duration (seconds to mm:ss)
 	duration := ""
 	if track.Duration > 0 {
@@ -646,16 +630,27 @@ func (v *MainView) formatQueueLine(track models.Track, index int, selected bool)
 		duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
 	}
 	
-	line := fmt.Sprintf("%s%s - %s (%s)%s", 
-		queueNum, track.Artist, track.Title, track.Album, duration)
+	// Build the track info without styling first
+	trackInfo := fmt.Sprintf("%s - %s (%s)%s", track.Artist, track.Title, track.Album, duration)
+	
+	var line string
 	
 	// Indicate if this is the currently playing track
 	if v.state.CurrentTrack != nil && track.ID == v.state.CurrentTrack.ID {
 		if v.state.IsPlaying {
-			line = "▶ " + line[2:] // Replace queue number with play indicator
+			line = "▶ " + trackInfo
 		} else {
-			line = "⏸ " + line[2:] // Replace queue number with pause indicator
+			line = "⏸ " + trackInfo
 		}
+		// Use special styling for current track
+		if selected {
+			return v.styles.ActiveField.Render("> " + line)
+		}
+		return v.styles.CurrentTrack.Render("  " + line)
+	} else {
+		// Regular queue entry with styled number
+		queueNum := v.styles.QueueNumber.Render(fmt.Sprintf("%2d. ", index+1))
+		line = queueNum + trackInfo
 	}
 	
 	if selected {
@@ -716,6 +711,8 @@ func (v *MainView) renderConfigTab() string {
 		style := v.styles.SuccessMessage
 		if strings.Contains(cf.ConnectionStatus, "❌") {
 			style = v.styles.ErrorMessage
+		} else if strings.Contains(cf.ConnectionStatus, "ℹ") {
+			style = v.styles.InfoMessage
 		}
 		sections = append(sections, style.Render(cf.ConnectionStatus))
 		sections = append(sections, "")
@@ -805,12 +802,13 @@ func (v *MainView) renderConfigField(field models.ConfigFormField, cf *models.Co
 
 // renderPlayer creates the persistent player module
 func (v *MainView) renderPlayer() string {
-	playerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("255")).
-		Background(lipgloss.Color("24")).
-		Padding(0, 1).
-		Width(v.width).
-		Bold(true)
+	// Ensure player has a valid width
+	playerWidth := v.width
+	if playerWidth <= 0 {
+		playerWidth = 80 // Fallback width
+	}
+	
+	playerStyle := v.styles.Player.Copy().Width(playerWidth)
 
 	if v.state.CurrentTrack == nil {
 		// Show empty player with current state
@@ -882,11 +880,13 @@ func (v *MainView) renderPlayer() string {
 
 // renderLogArea creates the log area at the bottom showing recent events
 func (v *MainView) renderLogArea() string {
-	logStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Background(lipgloss.Color("235")).
-		Padding(0, 1).
-		Width(v.width)
+	// Ensure log area has a valid width
+	logWidth := v.width
+	if logWidth <= 0 {
+		logWidth = 80 // Fallback width
+	}
+	
+	logStyle := v.styles.LogArea.Copy().Width(logWidth)
 
 	if len(v.state.LogMessages) == 0 {
 		return logStyle.Render("Ready • Press SPACE to play/pause, Alt+S for shuffle, or navigate with Tab")
@@ -1034,21 +1034,27 @@ func (v *MainView) formatModalAlbumLine(album models.Album, selected bool) strin
 	return "  " + line
 }
 
-// overlayModal overlays a modal on the background content using lipgloss positioning
-func (v *MainView) overlayModal(background, modal string, modalWidth, modalHeight int) string {
+// overlayModal overlays a modal on the background content using lipgloss positioning  
+func (v *MainView) overlayModal(_ /* background */, modal string, modalWidth, modalHeight int) string {
+	// Ensure we have valid dimensions
+	width := v.width
+	height := v.height
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = 24
+	}
+	
 	// Use lipgloss to properly position the modal
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("63")).
-		Background(lipgloss.Color("235")).
-		Padding(1).
+	modalStyle := v.styles.ModalBorder.Copy().
 		Width(modalWidth-4). // Account for border and padding
 		Height(modalHeight-4).
 		Align(lipgloss.Center, lipgloss.Center)
 	
 	// Position the modal in the center of the available space
 	positionedModal := lipgloss.Place(
-		v.width, v.height,
+		width, height,
 		lipgloss.Center, lipgloss.Center,
 		modalStyle.Render(modal),
 	)
