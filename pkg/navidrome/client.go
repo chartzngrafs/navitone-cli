@@ -595,3 +595,64 @@ func (c *Client) Scrobble(ctx context.Context, songID string, submission bool) e
 
 	return nil
 }
+
+// GetPlaylists retrieves playlists from the server
+func (c *Client) GetPlaylists(ctx context.Context) (*PlaylistsResponse, error) {
+	params := url.Values{}
+
+	resp, err := c.makeRequest(ctx, "getPlaylists", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading playlists response: %w", err)
+	}
+
+	var playlistsResp PlaylistsResponse
+	if err := json.Unmarshal(body, &playlistsResp); err != nil {
+		return nil, fmt.Errorf("parsing playlists response: %w", err)
+	}
+
+	if playlistsResp.SubsonicResponse.Status != "ok" {
+		if playlistsResp.SubsonicResponse.Error != nil {
+			return nil, fmt.Errorf("playlists error: %s", playlistsResp.SubsonicResponse.Error.Message)
+		}
+		return nil, fmt.Errorf("playlists failed with status: %s", playlistsResp.SubsonicResponse.Status)
+	}
+
+	return &playlistsResp, nil
+}
+
+// GetPlaylistTracks retrieves tracks from a specific playlist
+func (c *Client) GetPlaylistTracks(ctx context.Context, playlistID string) (*PlaylistResponse, error) {
+	params := url.Values{}
+	params.Add("id", playlistID)
+
+	resp, err := c.makeRequest(ctx, "getPlaylist", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading playlist tracks response: %w", err)
+	}
+
+	var playlistResp PlaylistResponse
+	if err := json.Unmarshal(body, &playlistResp); err != nil {
+		return nil, fmt.Errorf("parsing playlist tracks response: %w", err)
+	}
+
+	if playlistResp.SubsonicResponse.Status != "ok" {
+		if playlistResp.SubsonicResponse.Error != nil {
+			return nil, fmt.Errorf("playlist tracks error: %s", playlistResp.SubsonicResponse.Error.Message)
+		}
+		return nil, fmt.Errorf("playlist tracks failed with status: %s", playlistResp.SubsonicResponse.Status)
+	}
+
+	return &playlistResp, nil
+}

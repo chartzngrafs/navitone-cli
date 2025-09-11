@@ -165,7 +165,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle modal navigation first
-		if a.state.ShowAlbumModal || a.state.ShowArtistModal || a.state.ShowSearchModal || a.state.ShowSortModal {
+		if a.state.ShowAlbumModal || a.state.ShowArtistModal || a.state.ShowPlaylistModal || a.state.ShowSearchModal || a.state.ShowSortModal {
 			return a.handleModalKeyPress(msg)
 		}
 		return a.handleKeyPress(msg)
@@ -240,6 +240,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.LoadingError = ""
 		}
 		return a, nil
+	case PlaylistsLoadResult:
+		// Handle playlists load result
+		a.state.LoadingPlaylists = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			a.state.Playlists = msg.Playlists
+			a.state.LoadingError = ""
+		}
+		return a, nil
 	case AlbumTracksLoadResult:
 		// Handle album tracks load result and add to queue
 		if msg.Error != nil {
@@ -253,6 +263,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				a.state.Queue = append(a.state.Queue, msg.Tracks...)
 				a.logMessage(fmt.Sprintf("Added album to queue (%d tracks, total: %d)", len(msg.Tracks), len(a.state.Queue)))
+			}
+			a.state.LoadingError = ""
+		}
+		return a, nil
+	case PlaylistTracksQueueResult:
+		// Handle playlist tracks load result and add to queue
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			// Add all tracks to queue
+			if a.audioManager != nil {
+				a.audioManager.AddTracksToQueue(msg.Tracks)
+				// State will be updated via the audio manager callback
+				a.logMessage(fmt.Sprintf("Added playlist to queue (%d tracks)", len(msg.Tracks)))
+			} else {
+				a.state.Queue = append(a.state.Queue, msg.Tracks...)
+				a.logMessage(fmt.Sprintf("Added playlist to queue (%d tracks, total: %d)", len(msg.Tracks), len(a.state.Queue)))
 			}
 			a.state.LoadingError = ""
 		}
@@ -306,6 +333,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.LoadingError = msg.Error.Error()
 		} else {
 			a.state.ArtistAlbums = msg.Albums
+			a.state.SelectedModalIndex = 0
+			a.state.LoadingError = ""
+		}
+		return a, nil
+	case PlaylistTracksModalResult:
+		// Handle playlist tracks load for modal display
+		a.state.LoadingModalContent = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+		} else {
+			a.state.PlaylistTracks = msg.Tracks
 			a.state.SelectedModalIndex = 0
 			a.state.LoadingError = ""
 		}
@@ -480,6 +518,9 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if a.state.CurrentTab == models.ArtistsTab {
 		return a.handleArtistsKeyPress(msg)
+	}
+	if a.state.CurrentTab == models.PlaylistsTab {
+		return a.handlePlaylistsKeyPress(msg)
 	}
 	if a.state.CurrentTab == models.QueueTab {
 		return a.handleQueueKeyPress(msg)
@@ -769,6 +810,10 @@ func (a *App) handleTabChange() tea.Cmd {
 	case models.ArtistsTab:
 		if len(a.state.Artists) == 0 && a.navidromeClient != nil && !a.state.LoadingArtists {
 			return a.loadArtists()
+		}
+	case models.PlaylistsTab:
+		if len(a.state.Playlists) == 0 && a.navidromeClient != nil && !a.state.LoadingPlaylists {
+			return a.loadPlaylists()
 		}
 	}
 	return nil
@@ -1119,6 +1164,44 @@ func (a *App) loadArtists() tea.Cmd {
 	})
 }
 
+// loadPlaylists loads playlists from Navidrome
+func (a *App) loadPlaylists() tea.Cmd {
+	if a.navidromeClient == nil {
+		return nil
+	}
+
+	a.state.LoadingPlaylists = true
+	a.state.LoadingError = ""
+
+	return tea.Cmd(func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		resp, err := a.navidromeClient.GetPlaylists(ctx)
+		if err != nil {
+			return PlaylistsLoadResult{Error: err}
+		}
+
+		// Convert Navidrome playlists to our model
+		playlists := make([]models.Playlist, len(resp.SubsonicResponse.Playlists.Playlist))
+		for i, playlist := range resp.SubsonicResponse.Playlists.Playlist {
+			playlists[i] = models.Playlist{
+				ID:        playlist.ID,
+				Name:      playlist.Name,
+				Comment:   playlist.Comment,
+				Owner:     playlist.Owner,
+				Public:    playlist.Public,
+				SongCount: playlist.SongCount,
+				Duration:  playlist.Duration,
+				CreatedAt: playlist.Created,
+				ChangedAt: playlist.Changed,
+			}
+		}
+
+		return PlaylistsLoadResult{Playlists: playlists}
+	})
+}
+
 // loadHomeData loads all data needed for the home tab
 func (a *App) loadHomeData() tea.Cmd {
 	if a.navidromeClient == nil {
@@ -1390,6 +1473,66 @@ func (a *App) addAlbumToQueue(album models.Album) tea.Cmd {
 	)
 }
 
+// addPlaylistToQueue adds all tracks from a playlist to the queue
+func (a *App) addPlaylistToQueue(playlist models.Playlist) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			if a.navidromeClient == nil {
+				return PlaylistTracksQueueResult{Error: fmt.Errorf("navidrome client not initialized")}
+			}
+
+			// Add timeout context to prevent hanging
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			// Fetch actual tracks from the playlist
+			resp, err := a.navidromeClient.GetPlaylistTracks(ctx, playlist.ID)
+			if err != nil {
+				return PlaylistTracksQueueResult{Error: fmt.Errorf("failed to queue playlist tracks: %w", err)}
+			}
+
+			// Check if response structure is valid
+			if resp == nil {
+				return PlaylistTracksQueueResult{Error: fmt.Errorf("received null response")}
+			}
+			
+			entryCount := len(resp.SubsonicResponse.Playlist.Entry)
+			if entryCount == 0 {
+				return PlaylistTracksQueueResult{Tracks: []models.Track{}}
+			}
+
+			// Add a safety limit to prevent massive allocations
+			if entryCount > 10000 {
+				return PlaylistTracksQueueResult{Error: fmt.Errorf("playlist too large: %d tracks", entryCount)}
+			}
+
+			// Convert Navidrome songs to our model
+			tracks := make([]models.Track, entryCount)
+			for i, song := range resp.SubsonicResponse.Playlist.Entry {
+				tracks[i] = models.Track{
+					ID:       song.ID,
+					Title:    song.Title,
+					Artist:   song.Artist,
+					ArtistID: song.ArtistID,
+					Album:    song.Album,
+					AlbumID:  song.AlbumID,
+					Genre:    song.Genre,
+					Year:     song.Year,
+					Duration: song.Duration,
+					Track:    song.Track,
+					Disc:     song.DiscNumber,
+					Size:     song.Size,
+					Suffix:   song.Suffix,
+					BitRate:  song.BitRate,
+					Path:     song.Path,
+				}
+			}
+
+			return PlaylistTracksQueueResult{Tracks: tracks}
+		},
+	)
+}
+
 // AlbumTracksLoadResult represents the result of loading album tracks
 type AlbumTracksLoadResult struct {
 	Tracks []models.Track
@@ -1440,6 +1583,59 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+// handlePlaylistsKeyPress handles keyboard input for the playlists tab
+func (a *App) handlePlaylistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return a, a.cleanup()
+	case "tab":
+		a.nextTab()
+		return a, a.handleTabChange()
+	case "shift+tab":
+		a.prevTab()
+		return a, a.handleTabChange()
+	case "up":
+		if a.state.SelectedPlaylistIndex > 0 {
+			a.state.SelectedPlaylistIndex--
+		}
+	case "down":
+		if a.state.SelectedPlaylistIndex < len(a.state.Playlists)-1 {
+			a.state.SelectedPlaylistIndex++
+		}
+	case "pgup":
+		// Move up by 25 items
+		a.state.SelectedPlaylistIndex -= 25
+		if a.state.SelectedPlaylistIndex < 0 {
+			a.state.SelectedPlaylistIndex = 0
+		}
+	case "pgdown":
+		// Move down by 25 items
+		a.state.SelectedPlaylistIndex += 25
+		if a.state.SelectedPlaylistIndex >= len(a.state.Playlists) {
+			a.state.SelectedPlaylistIndex = len(a.state.Playlists) - 1
+		}
+	case "enter":
+		// Show playlist tracks modal
+		if a.state.SelectedPlaylistIndex < len(a.state.Playlists) {
+			return a, a.showPlaylistModal(a.state.Playlists[a.state.SelectedPlaylistIndex])
+		}
+	case "alt+enter":
+		// Queue entire playlist immediately (Alt+Enter)
+		if a.state.SelectedPlaylistIndex < len(a.state.Playlists) {
+			return a, a.addPlaylistToQueue(a.state.Playlists[a.state.SelectedPlaylistIndex])
+		}
+	case "a":
+		// Alternative: 'A' key to queue entire playlist immediately
+		if a.state.SelectedPlaylistIndex < len(a.state.Playlists) {
+			return a, a.addPlaylistToQueue(a.state.Playlists[a.state.SelectedPlaylistIndex])
+		}
+	case "r":
+		// Refresh playlists
+		return a, a.loadPlaylists()
+	}
+
+	return a, nil
+}
 
 // ArtistTracksLoadResult represents the result of loading artist tracks
 type ArtistTracksLoadResult struct {
@@ -1532,6 +1728,10 @@ type ArtistsLoadResult struct {
 	Error   error
 }
 
+type PlaylistsLoadResult struct {
+	Playlists []models.Playlist
+	Error     error
+}
 
 // Modal-specific message types
 type AlbumTracksModalResult struct {
@@ -1541,6 +1741,16 @@ type AlbumTracksModalResult struct {
 
 type ArtistAlbumsModalResult struct {
 	Albums []models.Album
+	Error  error
+}
+
+type PlaylistTracksModalResult struct {
+	Tracks []models.Track
+	Error  error
+}
+
+type PlaylistTracksQueueResult struct {
+	Tracks []models.Track
 	Error  error
 }
 
@@ -1651,6 +1861,73 @@ func (a *App) showArtistModal(artist models.Artist) tea.Cmd {
 	})
 }
 
+// showPlaylistModal displays the playlist tracks modal
+func (a *App) showPlaylistModal(playlist models.Playlist) tea.Cmd {
+	a.state.ShowPlaylistModal = true
+	a.state.SelectedPlaylist = &playlist
+	a.state.LoadingModalContent = true
+	a.state.PlaylistTracks = nil
+	a.state.SelectedModalIndex = 0
+
+	return tea.Cmd(func() tea.Msg {
+		if a.navidromeClient == nil {
+			return PlaylistTracksModalResult{Error: fmt.Errorf("navidrome client not initialized")}
+		}
+
+		// Add timeout context to prevent hanging
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		resp, err := a.navidromeClient.GetPlaylistTracks(ctx, playlist.ID)
+		if err != nil {
+			return PlaylistTracksModalResult{Error: fmt.Errorf("failed to load playlist tracks: %w", err)}
+		}
+
+		// Check if response structure is valid
+		if resp == nil {
+			return PlaylistTracksModalResult{Error: fmt.Errorf("received null response")}
+		}
+		
+		entryCount := len(resp.SubsonicResponse.Playlist.Entry)
+		if entryCount == 0 {
+			return PlaylistTracksModalResult{Tracks: []models.Track{}}
+		}
+
+		// Add a safety limit to prevent massive allocations
+		if entryCount > 10000 {
+			return PlaylistTracksModalResult{Error: fmt.Errorf("playlist too large: %d tracks", entryCount)}
+		}
+
+		tracks := make([]models.Track, entryCount)
+		for i, song := range resp.SubsonicResponse.Playlist.Entry {
+			// Safety check to prevent infinite loops
+			if i >= entryCount {
+				break
+			}
+			
+			tracks[i] = models.Track{
+				ID:       song.ID,
+				Title:    song.Title,
+				Artist:   song.Artist,
+				ArtistID: song.ArtistID,
+				Album:    song.Album,
+				AlbumID:  song.AlbumID,
+				Genre:    song.Genre,
+				Year:     song.Year,
+				Duration: song.Duration,
+				Track:    song.Track,
+				Disc:     song.DiscNumber,
+				Size:     song.Size,
+				Suffix:   song.Suffix,
+				BitRate:  song.BitRate,
+				Path:     song.Path,
+			}
+		}
+
+		return PlaylistTracksModalResult{Tracks: tracks}
+	})
+}
+
 // handleModalKeyPress handles keyboard input when a modal is open
 func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle search modal first
@@ -1668,11 +1945,14 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Close modal
 		a.state.ShowAlbumModal = false
 		a.state.ShowArtistModal = false
+		a.state.ShowPlaylistModal = false
 		a.state.ShowSortModal = false
 		a.state.SelectedAlbum = nil
 		a.state.SelectedArtist = nil
+		a.state.SelectedPlaylist = nil
 		a.state.AlbumTracks = nil
 		a.state.ArtistAlbums = nil
+		a.state.PlaylistTracks = nil
 		a.state.SelectedModalIndex = 0
 		a.state.SelectedSortIndex = 0
 		a.state.CurrentSortContext = ""
@@ -1689,9 +1969,31 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			maxIndex = len(a.state.AlbumTracks) - 1
 		} else if a.state.ShowArtistModal && len(a.state.ArtistAlbums) > 0 {
 			maxIndex = len(a.state.ArtistAlbums) - 1
+		} else if a.state.ShowPlaylistModal && len(a.state.PlaylistTracks) > 0 {
+			maxIndex = len(a.state.PlaylistTracks) - 1
 		}
 		if a.state.SelectedModalIndex < maxIndex {
 			a.state.SelectedModalIndex++
+		}
+	case "pgup":
+		// Jump up by 10 items in modal
+		a.state.SelectedModalIndex -= 10
+		if a.state.SelectedModalIndex < 0 {
+			a.state.SelectedModalIndex = 0
+		}
+	case "pgdown":
+		// Jump down by 10 items in modal
+		maxIndex := 0
+		if a.state.ShowAlbumModal && len(a.state.AlbumTracks) > 0 {
+			maxIndex = len(a.state.AlbumTracks) - 1
+		} else if a.state.ShowArtistModal && len(a.state.ArtistAlbums) > 0 {
+			maxIndex = len(a.state.ArtistAlbums) - 1
+		} else if a.state.ShowPlaylistModal && len(a.state.PlaylistTracks) > 0 {
+			maxIndex = len(a.state.PlaylistTracks) - 1
+		}
+		a.state.SelectedModalIndex += 10
+		if a.state.SelectedModalIndex > maxIndex {
+			a.state.SelectedModalIndex = maxIndex
 		}
 	case "enter":
 		// Handle different modal behaviors
@@ -1748,6 +2050,42 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.state.SelectedModalIndex = 0
 			
 			return a, a.showAlbumModal(selectedAlbum)
+		} else if a.state.ShowPlaylistModal && a.state.SelectedModalIndex < len(a.state.PlaylistTracks) {
+			// Playlist modal: Play selected track immediately and queue remainder
+			selectedIndex := a.state.SelectedModalIndex
+			selectedTrack := a.state.PlaylistTracks[selectedIndex]
+			remainingTracks := a.state.PlaylistTracks[selectedIndex:]
+			
+			// Close the modal first to prevent UI interference
+			a.state.ShowPlaylistModal = false
+			a.state.SelectedPlaylist = nil
+			a.state.PlaylistTracks = nil
+			a.state.SelectedModalIndex = 0
+			
+			if a.audioManager != nil {
+				// Clear current queue and add the track selection
+				a.audioManager.ClearQueue()
+				a.audioManager.AddTracksToQueue(remainingTracks)
+				// Start playing the first track (selected one)
+				a.audioManager.PlayTrackAtIndex(0)
+				
+				// Log the action for user feedback
+				trackNum := selectedIndex + 1
+				a.logMessage(fmt.Sprintf("Playing track %d: %s - %s (%d tracks queued)", 
+					trackNum, selectedTrack.Artist, selectedTrack.Title, len(remainingTracks)))
+			} else {
+				// Fallback if audio manager not available
+				a.state.Queue = remainingTracks
+				a.state.CurrentTrack = &selectedTrack
+				a.state.IsPlaying = true
+				
+				// Log the action for user feedback
+				trackNum := selectedIndex + 1
+				a.logMessage(fmt.Sprintf("Playing: %s - %s (from track %d)", 
+					selectedTrack.Artist, selectedTrack.Title, trackNum))
+			}
+			
+			return a, nil
 		}
 	case "a", "alt+enter":
 		// Add all items to queue
@@ -1771,6 +2109,16 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			a.logMessage(fmt.Sprintf("Queued %d albums (~%d tracks)", len(a.state.ArtistAlbums), totalTracks))
+		} else if a.state.ShowPlaylistModal && len(a.state.PlaylistTracks) > 0 {
+			// Add all playlist tracks to queue
+			if a.audioManager != nil {
+				a.audioManager.AddTracksToQueue(a.state.PlaylistTracks)
+				// State will be updated via the audio manager callback
+				a.logMessage(fmt.Sprintf("Added %d tracks to queue", len(a.state.PlaylistTracks)))
+			} else {
+				a.state.Queue = append(a.state.Queue, a.state.PlaylistTracks...)
+				a.logMessage(fmt.Sprintf("Added %d tracks to queue (total: %d)", len(a.state.PlaylistTracks), len(a.state.Queue)))
+			}
 		}
 	}
 

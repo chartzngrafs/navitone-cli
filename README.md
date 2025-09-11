@@ -24,18 +24,19 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Interactive Configuration** - Form-based config with field validation and connection testing
 - **Albums Tab** - Live browsing, modal track views, Alt+Enter quick queuing
 - **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart queue integration
+- **Playlists Tab** - Complete playlist management with modal navigation, track-by-track playback, and queue integration
 - **Interactive Home Tab** - Enhanced with 4 interactive sections: Recently Added Albums, Top Artists, Most Played Albums, and Top Tracks with ↑↓ navigation and real play count data
 - **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking
-- **Modal System** - Seamless navigation flow with context-aware controls
+- **Modal System** - Seamless navigation flow with context-aware controls across Albums, Artists, and Playlists
 - **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
 - **Enhanced Global Search** - Shift+F modal search with intelligent result limiting, pagination, and dual-mode playback
 - **Scrobbling System** - Full Last.fm and ListenBrainz support with Now Playing updates
 - **Process Management** - Proper MPV lifecycle with graceful shutdown and cleanup
 
 ### 🏗️ In Development
-- **Playlists Tab** - User playlist management and creation
-- **Sorting Options** - Sort controls for Albums, Artists tabs  
+- **Sorting Options** - Sort controls for Albums, Artists, Playlists tabs  
 - **Advanced Queue Features** - Reorder tracks, shuffle mode, repeat modes
+- **Playlist Management** - Create, edit, delete user playlists
 
 ### 📋 Planned (Phase 2)
 - Enhanced mouse support
@@ -100,13 +101,18 @@ navitone-cli/
 - **Global Search** - Shift+F to search and find specific tracks across your entire library
 
 ### 📋 Playlists
-- **Not Implemented** - Currently shows "Coming soon"
-- User playlist management (Planned)
-- Create, edit, delete playlists (Planned)
+- Complete playlist management with intuitive navigation
+- Format: `Playlist Name (X tracks) - Owner`
+- ↑↓ navigation with selection highlighting and PgUp/PgDn support
+- **Enter** - Opens playlist tracks modal with detailed track listing
+- **Alt+Enter/A** - Queue entire playlist immediately (bypass modal)
+- **R** - Refresh playlists list
+- **Modal Features**: Track-by-track navigation, play from any track, queue remainder
+- **Smart Integration**: Consistent Enter/Shift+Enter patterns with Albums and Artists tabs
 
 ### 🔄 Queue
 - Visual queue management with ↑↓ navigation
-- Add tracks from Albums, Artists, Tracks tabs
+- Add tracks from Albums, Artists, Playlists tabs
 - X/Del to remove individual tracks
 - C to clear entire queue
 - **✅ Full Playback Controls** - Enter/Space to play, Ctrl+N/P for next/previous
@@ -202,7 +208,12 @@ The application will automatically download required Go dependencies:
    - Enter to view artist's albums in modal
    - Navigate albums → Enter to view tracks → play from any track
    - Alt+Enter or A to queue all albums from artist
-4. Navigate to **Queue** tab - manage your playback queue
+4. Navigate to **Playlists** tab - browse your user playlists
+   - See all playlists with track counts and owner information
+   - Enter to view playlist tracks in modal with navigation
+   - Alt+Enter or A to queue entire playlist immediately
+   - Modal: Play from any track + queue remainder automatically
+5. Navigate to **Queue** tab - manage your playback queue
    - X/Del to remove tracks, C to clear all
    - **✅ Enter/Space to play tracks with real audio**
    - **✅ Alt+Left/Right for next/previous, Shift+Up/Down for volume**
@@ -298,8 +309,9 @@ go build -o bin/navitone ./cmd/navitone
 - [x] **Scrobbling Support** - Last.fm and ListenBrainz with Now Playing updates
 
 ### Phase 2 (Remaining Features)
-- [ ] **Playlists Tab** - User playlist management and creation
-- [ ] **Sorting Options** - Sort controls for Albums, Artists tabs
+- [x] **Playlists Tab** - User playlist viewing and playback (COMPLETE)
+- [ ] **Playlist Management** - Create, edit, delete user playlists  
+- [ ] **Sorting Options** - Sort controls for Albums, Artists, Playlists tabs
 - [ ] **Advanced Queue Features** - Reorder tracks, shuffle mode, repeat modes
 
 ### Phase 3 (Advanced Features)
@@ -357,4 +369,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Note**: Phase 1 core functionality is **complete**! The application now features a professional MPV-powered audio backend with universal format support, intuitive modal navigation, smart queue management, and clean keybindings. Ready for daily use with any Navidrome server.
 
-**Latest Update**: ✅ **Critical UI Bug Fixes** - Fixed persistent navigation header disappearing issue that occurred after playing tracks from modal windows. Root cause was the player module render interfering with the UI state during modal-to-playback transitions. Implemented comprehensive queue synchronization fixes ensuring tracks are consistently visible across all contexts. Fixed ANSI color code display issues in queue. Enhanced queue management with proper state callbacks and defensive rendering protections.
+**Latest Update**: ✅ **Complete Playlists Tab Implementation** - Fully implemented the Playlists tab with comprehensive playlist viewing, navigation, and playback capabilities. Features include: playlist browsing with track counts and metadata, Enter to view tracks modal, Alt+Enter/A to queue entire playlists, modal navigation with play-from-any-track functionality, PgUp/PgDn support for large playlists, and consistent integration with the existing modal system. The Playlists tab now provides the same intuitive navigation experience as Albums and Artists tabs, completing the core content browsing functionality.

@@ -17,7 +17,6 @@ type MainView struct {
 	styles ThemedStyles
 }
 
-
 // NewMainView creates a new main view
 func NewMainView(state *models.AppState, themeVariant string) *MainView {
 	theme := NewTheme(themeVariant)
@@ -27,8 +26,8 @@ func NewMainView(state *models.AppState, themeVariant string) *MainView {
 		state:  state,
 		theme:  theme,
 		styles: styles,
-		width:  80,  // Default width
-		height: 24,  // Default height
+		width:  80, // Default width
+		height: 24, // Default height
 	}
 }
 
@@ -52,14 +51,12 @@ func (v *MainView) Render() string {
 	if v.height <= 0 {
 		v.height = 24
 	}
-	
 
 	var sections []string
 
 	// Header with tabs - always render header first
 	header := v.renderHeader()
-	
-	
+
 	sections = append(sections, header)
 
 	// Main content area
@@ -67,20 +64,21 @@ func (v *MainView) Render() string {
 
 	// Footer with playback controls
 	sections = append(sections, v.renderFooter())
-	
+
 	// Log area at the bottom
 	sections = append(sections, v.renderLogArea())
 
-
 	// Modal overlays if active
 	content := strings.Join(sections, "\n")
-	
-	
+
 	if v.state.ShowAlbumModal {
 		return v.renderAlbumModalOverlay(content)
 	}
 	if v.state.ShowArtistModal {
 		return v.renderArtistModalOverlay(content)
+	}
+	if v.state.ShowPlaylistModal {
+		return v.renderPlaylistModalOverlay(content)
 	}
 	if v.state.ShowSearchModal {
 		return v.renderSearchModalOverlay(content)
@@ -94,7 +92,7 @@ func (v *MainView) Render() string {
 
 // renderHeader creates the header with tab navigation
 func (v *MainView) renderHeader() string {
-	
+
 	var tabs []string
 
 	for i := models.HomeTab; i <= models.ConfigTab; i++ {
@@ -106,13 +104,13 @@ func (v *MainView) renderHeader() string {
 	}
 
 	tabBar := strings.Join(tabs, "")
-	
+
 	// Ensure header has a valid width
 	headerWidth := v.width
 	if headerWidth <= 0 {
 		headerWidth = 80 // Fallback width
 	}
-	
+
 	return v.styles.Header.Width(headerWidth).Render(tabBar)
 }
 
@@ -127,7 +125,7 @@ func (v *MainView) renderContent() string {
 	if height <= 0 {
 		height = 24
 	}
-	
+
 	contentHeight := height - 6 // Account for header, footer, and log area
 	contentWidth := width - 2
 	if contentWidth < 10 {
@@ -136,7 +134,7 @@ func (v *MainView) renderContent() string {
 	if contentHeight < 5 {
 		contentHeight = 5 // Minimum content height
 	}
-	
+
 	content := v.styles.Content.
 		Width(contentWidth).
 		Height(contentHeight)
@@ -163,13 +161,13 @@ func (v *MainView) renderContent() string {
 func (v *MainView) renderFooter() string {
 	// Simple footer with just navigation hints since player module handles playback
 	footer := "Tab/Shift+Tab: Switch tabs | Shift+F: Global Search | Shift+S: Sort | Ctrl+C/q: Quit"
-	
+
 	// Ensure footer has a valid width
 	footerWidth := v.width
 	if footerWidth <= 0 {
 		footerWidth = 80 // Fallback width
 	}
-	
+
 	return v.styles.Footer.Width(footerWidth).Render(footer)
 }
 
@@ -178,14 +176,14 @@ func (v *MainView) renderHomeTab() string {
 	if v.state.LoadingHomeData {
 		return "🏠 Home\n\nLoading home data..."
 	}
-	
+
 	if v.state.LoadingError != "" {
 		return fmt.Sprintf("🏠 Home\n\n❌ Error: %s\n\nPress 'r' to retry", v.state.LoadingError)
 	}
-	
+
 	var content strings.Builder
 	content.WriteString("🏠 Home\n\n")
-	
+
 	// Show queue status
 	if len(v.state.Queue) > 0 {
 		content.WriteString(fmt.Sprintf("🔄 Queue: %d tracks", len(v.state.Queue)))
@@ -194,31 +192,31 @@ func (v *MainView) renderHomeTab() string {
 			if v.state.IsPlaying {
 				playStatus = "▶"
 			}
-			content.WriteString(fmt.Sprintf(" | %s %s - %s", 
+			content.WriteString(fmt.Sprintf(" | %s %s - %s",
 				playStatus, v.state.CurrentTrack.Artist, v.state.CurrentTrack.Title))
 		}
 		content.WriteString("\n\n")
 	}
-	
+
 	// Instructions
 	content.WriteString("↑↓ Navigate • PgUp/PgDn Jump sections • Enter/Shift+Enter to select • R to refresh\n\n")
-	
+
 	// Render all four sections vertically
 	content.WriteString(v.renderHomeSections())
-	
+
 	return content.String()
 }
 
 // renderHomeSections renders all four home sections vertically with interactive navigation
 func (v *MainView) renderHomeSections() string {
 	var sections strings.Builder
-	
+
 	// Use full width for vertical layout
 	sectionWidth := v.width - 4 // Leave space for padding
 	if sectionWidth < 40 {
 		sectionWidth = 40
 	}
-	
+
 	// Render all sections vertically
 	sections.WriteString(v.renderRecentlyAddedSection(sectionWidth))
 	sections.WriteString("\n")
@@ -227,7 +225,7 @@ func (v *MainView) renderHomeSections() string {
 	sections.WriteString(v.renderMostPlayedAlbumsSection(sectionWidth))
 	sections.WriteString("\n")
 	sections.WriteString(v.renderTopTracksSection(sectionWidth))
-	
+
 	return sections.String()
 }
 
@@ -235,7 +233,7 @@ func (v *MainView) renderHomeSections() string {
 func (v *MainView) renderRecentlyAddedSection(width int) string {
 	var content strings.Builder
 	isActiveSection := v.state.HomeSelectedSection == 0
-	
+
 	// Section title with indicator if active
 	title := "💿 Recently Added Albums"
 	if isActiveSection {
@@ -244,25 +242,25 @@ func (v *MainView) renderRecentlyAddedSection(width int) string {
 		title = v.styles.SectionTitle.Render(title)
 	}
 	content.WriteString(title + "\n")
-	
+
 	if len(v.state.RecentlyAddedAlbums) == 0 {
 		content.WriteString("  No albums loaded\n")
 		return content.String()
 	}
-	
+
 	// Show albums with selection highlighting
 	maxShow := 6 // More items since we have vertical space
 	if len(v.state.RecentlyAddedAlbums) < maxShow {
 		maxShow = len(v.state.RecentlyAddedAlbums)
 	}
-	
+
 	for i := 0; i < maxShow; i++ {
 		album := v.state.RecentlyAddedAlbums[i]
 		yearStr := ""
 		if album.Year > 0 {
 			yearStr = fmt.Sprintf(" (%d)", album.Year)
 		}
-		
+
 		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
 			line = v.styles.ActiveField.Render("> " + line)
@@ -271,11 +269,11 @@ func (v *MainView) renderRecentlyAddedSection(width int) string {
 		}
 		content.WriteString(line + "\n")
 	}
-	
+
 	if len(v.state.RecentlyAddedAlbums) > maxShow {
 		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.RecentlyAddedAlbums)-maxShow))
 	}
-	
+
 	return content.String()
 }
 
@@ -283,7 +281,7 @@ func (v *MainView) renderRecentlyAddedSection(width int) string {
 func (v *MainView) renderTopArtistsSection(width int) string {
 	var content strings.Builder
 	isActiveSection := v.state.HomeSelectedSection == 1
-	
+
 	// Section title with indicator if active
 	title := "🎤 Top Artists"
 	if isActiveSection {
@@ -292,30 +290,30 @@ func (v *MainView) renderTopArtistsSection(width int) string {
 		title = v.styles.SectionTitle.Render(title)
 	}
 	content.WriteString(title + "\n")
-	
+
 	if len(v.state.TopArtistsByPlays) == 0 {
 		content.WriteString("  No artists loaded\n")
 		return content.String()
 	}
-	
+
 	// Show artists with selection highlighting
 	maxShow := 5 // Show all 5 top artists
 	if len(v.state.TopArtistsByPlays) < maxShow {
 		maxShow = len(v.state.TopArtistsByPlays)
 	}
-	
+
 	for i := 0; i < maxShow; i++ {
 		artist := v.state.TopArtistsByPlays[i]
 		star := ""
 		if artist.StarredAt != nil {
 			star = "★ "
 		}
-		
+
 		albumText := "album"
 		if artist.AlbumCount != 1 {
 			albumText = "albums"
 		}
-		
+
 		line := fmt.Sprintf("%s%s (%d %s)", star, artist.Name, artist.AlbumCount, albumText)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
 			line = v.styles.ActiveField.Render("> " + line)
@@ -324,11 +322,11 @@ func (v *MainView) renderTopArtistsSection(width int) string {
 		}
 		content.WriteString(line + "\n")
 	}
-	
+
 	if len(v.state.TopArtistsByPlays) > maxShow {
 		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.TopArtistsByPlays)-maxShow))
 	}
-	
+
 	return content.String()
 }
 
@@ -336,7 +334,7 @@ func (v *MainView) renderTopArtistsSection(width int) string {
 func (v *MainView) renderMostPlayedAlbumsSection(width int) string {
 	var content strings.Builder
 	isActiveSection := v.state.HomeSelectedSection == 2
-	
+
 	// Section title with indicator if active
 	title := "🔥 Most Played Albums"
 	if isActiveSection {
@@ -345,25 +343,25 @@ func (v *MainView) renderMostPlayedAlbumsSection(width int) string {
 		title = v.styles.SectionTitle.Render(title)
 	}
 	content.WriteString(title + "\n")
-	
+
 	if len(v.state.MostPlayedAlbums) == 0 {
 		content.WriteString("  No albums loaded\n")
 		return content.String()
 	}
-	
+
 	// Show albums with selection highlighting
 	maxShow := 6 // More items since we have vertical space
 	if len(v.state.MostPlayedAlbums) < maxShow {
 		maxShow = len(v.state.MostPlayedAlbums)
 	}
-	
+
 	for i := 0; i < maxShow; i++ {
 		album := v.state.MostPlayedAlbums[i]
 		yearStr := ""
 		if album.Year > 0 {
 			yearStr = fmt.Sprintf(" (%d)", album.Year)
 		}
-		
+
 		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
 			line = v.styles.ActiveField.Render("> " + line)
@@ -372,11 +370,11 @@ func (v *MainView) renderMostPlayedAlbumsSection(width int) string {
 		}
 		content.WriteString(line + "\n")
 	}
-	
+
 	if len(v.state.MostPlayedAlbums) > maxShow {
 		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.MostPlayedAlbums)-maxShow))
 	}
-	
+
 	return content.String()
 }
 
@@ -384,7 +382,7 @@ func (v *MainView) renderMostPlayedAlbumsSection(width int) string {
 func (v *MainView) renderTopTracksSection(width int) string {
 	var content strings.Builder
 	isActiveSection := v.state.HomeSelectedSection == 3
-	
+
 	// Section title with indicator if active
 	title := "🎵 Top Tracks"
 	if isActiveSection {
@@ -393,21 +391,21 @@ func (v *MainView) renderTopTracksSection(width int) string {
 		title = v.styles.SectionTitle.Render(title)
 	}
 	content.WriteString(title + "\n")
-	
+
 	if len(v.state.TopTracks) == 0 {
 		content.WriteString("  No tracks loaded\n")
 		return content.String()
 	}
-	
-	// Show tracks with selection highlighting  
+
+	// Show tracks with selection highlighting
 	maxShow := 8 // More tracks since we have vertical space
 	if len(v.state.TopTracks) < maxShow {
 		maxShow = len(v.state.TopTracks)
 	}
-	
+
 	for i := 0; i < maxShow; i++ {
 		track := v.state.TopTracks[i]
-		
+
 		// Format duration (seconds to mm:ss)
 		duration := ""
 		if track.Duration > 0 {
@@ -415,7 +413,7 @@ func (v *MainView) renderTopTracksSection(width int) string {
 			seconds := track.Duration % 60
 			duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
 		}
-		
+
 		line := fmt.Sprintf("%s - %s%s", track.Artist, track.Title, duration)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
 			line = v.styles.ActiveField.Render("> " + line)
@@ -424,11 +422,11 @@ func (v *MainView) renderTopTracksSection(width int) string {
 		}
 		content.WriteString(line + "\n")
 	}
-	
+
 	if len(v.state.TopTracks) > maxShow {
 		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.TopTracks)-maxShow))
 	}
-	
+
 	return content.String()
 }
 
@@ -436,26 +434,26 @@ func (v *MainView) renderAlbumsTab() string {
 	if v.state.LoadingAlbums {
 		return "💿 Albums\n\nLoading albums..."
 	}
-	
+
 	if v.state.LoadingError != "" {
 		return fmt.Sprintf("💿 Albums\n\n❌ Error: %s\n\nPress 'r' to retry", v.state.LoadingError)
 	}
-	
+
 	if len(v.state.Albums) == 0 {
 		return "💿 Albums\n\nNo albums found.\n\nMake sure your Navidrome server is configured in the Config tab."
 	}
-	
+
 	var content strings.Builder
 	content.WriteString("💿 Albums\n\n")
-	
+
 	// Show instructions
 	instructions := "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter to view tracks • Alt+Enter/A to queue album • R to refresh • Shift+S to sort"
 	content.WriteString(instructions + "\n\n")
-	
+
 	// Render all albums with smart viewport for large lists
 	startIdx := 0
 	endIdx := len(v.state.Albums)
-	
+
 	// For very large lists, show a window around the selected item
 	maxVisible := 25 // Show more items since we removed pagination
 	if len(v.state.Albums) > maxVisible {
@@ -470,24 +468,24 @@ func (v *MainView) renderAlbumsTab() string {
 		startIdx = viewportStart
 		endIdx = viewportStart + maxVisible
 	}
-	
+
 	for i := startIdx; i < endIdx; i++ {
 		album := v.state.Albums[i]
 		line := v.formatAlbumLine(album, i == v.state.SelectedAlbumIndex)
 		content.WriteString(line)
 		content.WriteString("\n")
 	}
-	
+
 	// Show total count
 	if len(v.state.Albums) > 0 {
 		if len(v.state.Albums) > maxVisible {
-			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d albums", 
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d albums",
 				startIdx+1, endIdx, len(v.state.Albums)))
 		} else {
 			content.WriteString(fmt.Sprintf("\n%d albums total", len(v.state.Albums)))
 		}
 	}
-	
+
 	return content.String()
 }
 
@@ -497,14 +495,14 @@ func (v *MainView) formatAlbumLine(album models.Album, selected bool) string {
 	if album.Year > 0 {
 		yearStr = fmt.Sprintf("[%d] ", album.Year)
 	}
-	
-	line := fmt.Sprintf("%s%s - %s (%d tracks)", 
+
+	line := fmt.Sprintf("%s%s - %s (%d tracks)",
 		yearStr, album.Artist, album.Name, album.TrackCount)
-	
+
 	if selected {
 		return v.styles.ActiveField.Render("> " + line)
 	}
-	
+
 	return "  " + line
 }
 
@@ -512,25 +510,25 @@ func (v *MainView) renderArtistsTab() string {
 	if v.state.LoadingArtists {
 		return "🎤 Artists\n\nLoading artists..."
 	}
-	
+
 	if v.state.LoadingError != "" {
 		return fmt.Sprintf("🎤 Artists\n\n❌ Error: %s\n\nPress 'r' to retry", v.state.LoadingError)
 	}
-	
+
 	if len(v.state.Artists) == 0 {
 		return "🎤 Artists\n\nNo artists found.\n\nMake sure your Navidrome server is configured in the Config tab."
 	}
-	
+
 	var content strings.Builder
 	content.WriteString("🎤 Artists\n\n")
-	
-	// Show instructions  
+
+	// Show instructions
 	content.WriteString("↑↓ Navigate • PgUp/PgDn Jump 25 • Enter to view albums • R to refresh • Shift+S to sort\n\n")
-	
+
 	// Render all artists with smart viewport for large lists
 	startIdx := 0
 	endIdx := len(v.state.Artists)
-	
+
 	// For very large lists, show a window around the selected item
 	maxVisible := 25 // Show more items since we removed pagination
 	if len(v.state.Artists) > maxVisible {
@@ -545,24 +543,24 @@ func (v *MainView) renderArtistsTab() string {
 		startIdx = viewportStart
 		endIdx = viewportStart + maxVisible
 	}
-	
+
 	for i := startIdx; i < endIdx; i++ {
 		artist := v.state.Artists[i]
 		line := v.formatArtistLine(artist, i == v.state.SelectedArtistIndex)
 		content.WriteString(line)
 		content.WriteString("\n")
 	}
-	
+
 	// Show total count
 	if len(v.state.Artists) > 0 {
 		if len(v.state.Artists) > maxVisible {
-			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d artists", 
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d artists",
 				startIdx+1, endIdx, len(v.state.Artists)))
 		} else {
 			content.WriteString(fmt.Sprintf("\n%d artists total", len(v.state.Artists)))
 		}
 	}
-	
+
 	return content.String()
 }
 
@@ -572,56 +570,166 @@ func (v *MainView) formatArtistLine(artist models.Artist, selected bool) string 
 	if artist.AlbumCount != 1 {
 		albumText = "albums"
 	}
-	
+
 	line := fmt.Sprintf("%s (%d %s)", artist.Name, artist.AlbumCount, albumText)
-	
+
 	// Add star indicator if starred
 	if artist.StarredAt != nil {
 		line = "★ " + line
 	}
-	
+
 	if selected {
 		return v.styles.ActiveField.Render("> " + line)
 	}
-	
+
 	return "  " + line
 }
 
+func (v *MainView) formatPlaylistLine(playlist models.Playlist, selected bool) string {
+	// Format: Playlist Name (X songs) - Owner
+	songText := "song"
+	if playlist.SongCount != 1 {
+		songText = "songs"
+	}
+
+	line := fmt.Sprintf("%s (%d %s)", playlist.Name, playlist.SongCount, songText)
+
+	// Add owner info if not the current user
+	if playlist.Owner != "" {
+		line += fmt.Sprintf(" - by %s", playlist.Owner)
+	}
+
+	// Add public/private indicator
+	if playlist.Public {
+		line = "🌐 " + line
+	} else {
+		line = "🔒 " + line
+	}
+
+	if selected {
+		return v.styles.ActiveField.Render("> " + line)
+	}
+
+	return "  " + line
+}
 
 func (v *MainView) renderPlaylistsTab() string {
-	return "📋 Playlists Tab\n\n(Coming soon)"
+	if v.state.LoadingPlaylists {
+		return "📋 Playlists\n\nLoading playlists..."
+	}
+
+	if v.state.LoadingError != "" {
+		return fmt.Sprintf("📋 Playlists\n\n❌ Error: %s\n\nPress 'r' to retry", v.state.LoadingError)
+	}
+
+	if len(v.state.Playlists) == 0 {
+		return "📋 Playlists\n\nNo playlists found.\n\nMake sure your Navidrome server is configured in the Config tab."
+	}
+
+	var content strings.Builder
+	content.WriteString("📋 Playlists\n\n")
+
+	// Show instructions
+	content.WriteString("↑↓ Navigate • PgUp/PgDn Jump 25 • Enter to view tracks • Alt+Enter/A to queue playlist • R to refresh • Shift+S to sort\n\n")
+
+	// Render all playlists with smart viewport for large lists
+	startIdx := 0
+	endIdx := len(v.state.Playlists)
+
+	// For very large lists, show a window around the selected item
+	maxVisible := 25
+	if len(v.state.Playlists) > maxVisible {
+		// Center the viewport around the selected item
+		viewportStart := v.state.SelectedPlaylistIndex - maxVisible/2
+		if viewportStart < 0 {
+			viewportStart = 0
+		}
+		if viewportStart+maxVisible > len(v.state.Playlists) {
+			viewportStart = len(v.state.Playlists) - maxVisible
+		}
+		startIdx = viewportStart
+		endIdx = viewportStart + maxVisible
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		playlist := v.state.Playlists[i]
+		line := v.formatPlaylistLine(playlist, i == v.state.SelectedPlaylistIndex)
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+
+	// Show total count
+	if len(v.state.Playlists) > 0 {
+		if len(v.state.Playlists) > maxVisible {
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d playlists",
+				startIdx+1, endIdx, len(v.state.Playlists)))
+		} else {
+			content.WriteString(fmt.Sprintf("\n%d playlists total", len(v.state.Playlists)))
+		}
+	}
+
+	return content.String()
 }
 
 func (v *MainView) renderQueueTab() string {
 	var content strings.Builder
 	content.WriteString("🔄 Queue\n\n")
-	
+
 	if len(v.state.Queue) == 0 {
 		content.WriteString("Queue is empty.\n\n")
 		content.WriteString("Add tracks by navigating to Albums, Artists, or Tracks tabs and pressing Enter.")
 		return content.String()
 	}
-	
+
 	// Show instructions
 	content.WriteString(fmt.Sprintf("↑↓ Navigate • PgUp/PgDn Jump 25 • Enter/Space to play • X/Del to remove • C to clear all (%d tracks)\n\n", len(v.state.Queue)))
-	
+
 	// Show current playing track if any
 	if v.state.CurrentTrack != nil {
 		playStatus := "⏸"
 		if v.state.IsPlaying {
 			playStatus = "▶"
 		}
-		content.WriteString(fmt.Sprintf("Now Playing: %s %s - %s\n\n", 
+		content.WriteString(fmt.Sprintf("Now Playing: %s %s - %s\n\n",
 			playStatus, v.state.CurrentTrack.Artist, v.state.CurrentTrack.Title))
 	}
-	
-	// Render queue list
-	for i, track := range v.state.Queue {
+
+	// Render queue list with smart viewport for large lists
+	startIdx := 0
+	endIdx := len(v.state.Queue)
+
+	// For very large lists, show a window around the selected item
+	maxVisible := 25 // Show more items since we removed pagination
+	if len(v.state.Queue) > maxVisible {
+		// Center the viewport around the selected item
+		viewportStart := v.state.SelectedQueueIndex - maxVisible/2
+		if viewportStart < 0 {
+			viewportStart = 0
+		}
+		if viewportStart+maxVisible > len(v.state.Queue) {
+			viewportStart = len(v.state.Queue) - maxVisible
+		}
+		startIdx = viewportStart
+		endIdx = viewportStart + maxVisible
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		track := v.state.Queue[i]
 		line := v.formatQueueLine(track, i, i == v.state.SelectedQueueIndex)
 		content.WriteString(line)
 		content.WriteString("\n")
 	}
-	
+
+	// Show total count
+	if len(v.state.Queue) > 0 {
+		if len(v.state.Queue) > maxVisible {
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d tracks",
+				startIdx+1, endIdx, len(v.state.Queue)))
+		} else {
+			content.WriteString(fmt.Sprintf("\n%d tracks total", len(v.state.Queue)))
+		}
+	}
+
 	return content.String()
 }
 
@@ -633,12 +741,12 @@ func (v *MainView) formatQueueLine(track models.Track, index int, selected bool)
 		seconds := track.Duration % 60
 		duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
 	}
-	
+
 	// Build the track info without styling first
 	trackInfo := fmt.Sprintf("%s - %s (%s)%s", track.Artist, track.Title, track.Album, duration)
-	
+
 	var line string
-	
+
 	// Indicate if this is the currently playing track
 	if v.state.CurrentTrack != nil && track.ID == v.state.CurrentTrack.ID {
 		if v.state.IsPlaying {
@@ -656,11 +764,11 @@ func (v *MainView) formatQueueLine(track models.Track, index int, selected bool)
 		queueNum := v.styles.QueueNumber.Render(fmt.Sprintf("%2d. ", index+1))
 		line = queueNum + trackInfo
 	}
-	
+
 	if selected {
 		return v.styles.ActiveField.Render("> " + line)
 	}
-	
+
 	return "  " + line
 }
 
@@ -735,21 +843,21 @@ func (v *MainView) renderConfigTab() string {
 // renderConfigSection renders a section of configuration fields
 func (v *MainView) renderConfigSection(title string, fields []models.ConfigFormField, cf *models.ConfigFormState) string {
 	var lines []string
-	
+
 	// Section title
 	lines = append(lines, v.styles.SectionTitle.Render(title))
-	
+
 	// Top border
-	lines = append(lines, "┌" + strings.Repeat("─", 45) + "┐")
-	
+	lines = append(lines, "┌"+strings.Repeat("─", 45)+"┐")
+
 	// Fields
 	for _, field := range fields {
 		lines = append(lines, v.renderConfigField(field, cf))
 	}
-	
+
 	// Bottom border
-	lines = append(lines, "└" + strings.Repeat("─", 45) + "┘")
-	
+	lines = append(lines, "└"+strings.Repeat("─", 45)+"┘")
+
 	return strings.Join(lines, "\n")
 }
 
@@ -757,9 +865,9 @@ func (v *MainView) renderConfigSection(title string, fields []models.ConfigFormF
 func (v *MainView) renderConfigField(field models.ConfigFormField, cf *models.ConfigFormState) string {
 	isActive := cf.ActiveField == field
 	label := cf.GetFieldLabel(field)
-	
+
 	var line string
-	
+
 	if cf.IsCheckboxField(field) {
 		// Checkbox field
 		checked := cf.GetCheckboxValue(field)
@@ -767,7 +875,7 @@ func (v *MainView) renderConfigField(field models.ConfigFormField, cf *models.Co
 		if checked {
 			checkbox = "☑"
 		}
-		
+
 		line = fmt.Sprintf("│ %s %s", checkbox, label)
 	} else {
 		// Text input field
@@ -775,16 +883,16 @@ func (v *MainView) renderConfigField(field models.ConfigFormField, cf *models.Co
 		if cf.EditMode && isActive {
 			value = cf.CurrentInput
 		}
-		
+
 		// Pad the value to fit in the field
 		fieldWidth := 45 - len(label) - 6
 		if len(value) > fieldWidth {
 			value = value[:fieldWidth-3] + "..."
 		}
-		
+
 		line = fmt.Sprintf("│ %s: [%-*s] │", label, fieldWidth, value)
 	}
-	
+
 	// Highlight active field
 	if isActive {
 		if cf.EditMode {
@@ -793,16 +901,15 @@ func (v *MainView) renderConfigField(field models.ConfigFormField, cf *models.Co
 			return v.styles.ActiveField.Render(line)
 		}
 	}
-	
+
 	// Complete the checkbox line format
 	if cf.IsCheckboxField(field) {
 		padding := 45 - len(line) + 1
 		line += strings.Repeat(" ", padding) + "│"
 	}
-	
+
 	return v.styles.InactiveField.Render(line)
 }
-
 
 // renderPlayer creates the persistent player module
 func (v *MainView) renderPlayer() string {
@@ -811,28 +918,28 @@ func (v *MainView) renderPlayer() string {
 	if playerWidth <= 0 {
 		playerWidth = 80 // Fallback width
 	}
-	
+
 	playerStyle := v.styles.Player.Copy().Width(playerWidth)
 
 	if v.state.CurrentTrack == nil {
 		// Show empty player with current state
 		var status []string
-		
+
 		if v.state.IsPlaying {
 			status = append(status, "▶ Playing")
 		} else {
 			status = append(status, "⏸ Stopped")
 		}
-		
+
 		status = append(status, fmt.Sprintf("Vol: %d%%", v.state.Volume))
 		status = append(status, fmt.Sprintf("Queue: %d", len(v.state.Queue)))
-		
+
 		if v.state.IsShuffleMode {
 			status = append(status, "🔀 SHUFFLE ON")
 		} else {
 			status = append(status, "🔀 Shuffle off")
 		}
-		
+
 		statusStr := strings.Join(status, " | ")
 		playerContent := fmt.Sprintf("♪ No track loaded | %s\nSPACE: Play/Pause | Alt+←/→: Skip | Alt+S: Shuffle | Shift+↑/↓: Volume", statusStr)
 		return playerStyle.Render(playerContent)
@@ -889,7 +996,7 @@ func (v *MainView) renderLogArea() string {
 	if logWidth <= 0 {
 		logWidth = 80 // Fallback width
 	}
-	
+
 	logStyle := v.styles.LogArea.Copy().Width(logWidth)
 
 	if len(v.state.LogMessages) == 0 {
@@ -899,14 +1006,14 @@ func (v *MainView) renderLogArea() string {
 	// Show up to 2 most recent log messages
 	var logLines []string
 	messageCount := len(v.state.LogMessages)
-	
+
 	if messageCount > 0 {
 		// Show the most recent messages (up to 2)
 		startIndex := 0
 		if messageCount > 2 {
 			startIndex = messageCount - 2
 		}
-		
+
 		for i := startIndex; i < messageCount; i++ {
 			msg := v.state.LogMessages[i]
 			// Truncate very long messages to fit nicely
@@ -916,7 +1023,7 @@ func (v *MainView) renderLogArea() string {
 			logLines = append(logLines, msg)
 		}
 	}
-	
+
 	// Pad to always show 2 lines for consistent layout
 	for len(logLines) < 2 {
 		logLines = append(logLines, "")
@@ -933,9 +1040,9 @@ func (v *MainView) renderAlbumModalOverlay(background string) string {
 	}
 
 	var content strings.Builder
-	
+
 	// Modal header
-	content.WriteString(fmt.Sprintf("🎵 %s - %s (%d)\n\n", 
+	content.WriteString(fmt.Sprintf("🎵 %s - %s (%d)\n\n",
 		v.state.SelectedAlbum.Artist, v.state.SelectedAlbum.Name, v.state.SelectedAlbum.Year))
 
 	if v.state.LoadingModalContent {
@@ -944,13 +1051,38 @@ func (v *MainView) renderAlbumModalOverlay(background string) string {
 		content.WriteString("No tracks found.")
 	} else {
 		// Instructions
-		content.WriteString("↑↓ Navigate • Enter to play & queue remainder • A to add all • Esc to close\n\n")
-		
-		// Track list
-		for i, track := range v.state.AlbumTracks {
+		content.WriteString("↑↓ Navigate • PgUp/PgDn Jump • Enter to play & queue remainder • A to add all • Esc to close\n\n")
+
+		// Track list with viewport scrolling for large albums
+		startIdx := 0
+		endIdx := len(v.state.AlbumTracks)
+
+		// For large track lists, show a window around the selected item
+		maxVisible := 15 // Show fewer items in modal to fit better
+		if len(v.state.AlbumTracks) > maxVisible {
+			// Center the viewport around the selected item
+			viewportStart := v.state.SelectedModalIndex - maxVisible/2
+			if viewportStart < 0 {
+				viewportStart = 0
+			}
+			if viewportStart+maxVisible > len(v.state.AlbumTracks) {
+				viewportStart = len(v.state.AlbumTracks) - maxVisible
+			}
+			startIdx = viewportStart
+			endIdx = viewportStart + maxVisible
+		}
+
+		for i := startIdx; i < endIdx; i++ {
+			track := v.state.AlbumTracks[i]
 			line := v.formatModalTrackLine(track, i, i == v.state.SelectedModalIndex)
 			content.WriteString(line)
 			content.WriteString("\n")
+		}
+
+		// Show scroll indicator if there are more tracks
+		if len(v.state.AlbumTracks) > maxVisible {
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d tracks",
+				startIdx+1, endIdx, len(v.state.AlbumTracks)))
 		}
 	}
 
@@ -965,13 +1097,13 @@ func (v *MainView) renderArtistModalOverlay(background string) string {
 	}
 
 	var content strings.Builder
-	
+
 	// Modal header
 	albumText := "album"
 	if v.state.SelectedArtist.AlbumCount != 1 {
 		albumText = "albums"
 	}
-	content.WriteString(fmt.Sprintf("🎤 %s (%d %s)\n\n", 
+	content.WriteString(fmt.Sprintf("🎤 %s (%d %s)\n\n",
 		v.state.SelectedArtist.Name, v.state.SelectedArtist.AlbumCount, albumText))
 
 	if v.state.LoadingModalContent {
@@ -981,12 +1113,69 @@ func (v *MainView) renderArtistModalOverlay(background string) string {
 	} else {
 		// Instructions
 		content.WriteString("↑↓ Navigate • Enter to view tracks • A/Alt+Enter to queue all • Esc to close\n\n")
-		
+
 		// Album list
 		for i, album := range v.state.ArtistAlbums {
 			line := v.formatModalAlbumLine(album, i == v.state.SelectedModalIndex)
 			content.WriteString(line)
 			content.WriteString("\n")
+		}
+	}
+
+	// Center the modal overlay (styling is applied in overlayModal)
+	return v.overlayModal(background, content.String(), 80, 25)
+}
+
+// renderPlaylistModalOverlay renders the playlist tracks modal overlay
+func (v *MainView) renderPlaylistModalOverlay(background string) string {
+	if v.state.SelectedPlaylist == nil {
+		return background
+	}
+
+	var content strings.Builder
+
+	// Modal header - simplified to match album modal pattern
+	content.WriteString(fmt.Sprintf("📋 %s (%d tracks)\n\n",
+		v.state.SelectedPlaylist.Name, v.state.SelectedPlaylist.SongCount))
+
+	if v.state.LoadingModalContent {
+		content.WriteString("Loading tracks...")
+	} else if len(v.state.PlaylistTracks) == 0 {
+		content.WriteString("No tracks found.")
+	} else {
+		// Instructions
+		content.WriteString("↑↓ Navigate • PgUp/PgDn Jump • Enter to play & queue remainder • A to add all • Esc to close\n\n")
+
+		// Track list with viewport scrolling for large playlists
+		startIdx := 0
+		endIdx := len(v.state.PlaylistTracks)
+
+		// For large track lists, show a window around the selected item
+		maxVisible := 15 // Show fewer items in modal to fit better
+		if len(v.state.PlaylistTracks) > maxVisible {
+			// Center the viewport around the selected item
+			viewportStart := v.state.SelectedModalIndex - maxVisible/2
+			if viewportStart < 0 {
+				viewportStart = 0
+			}
+			if viewportStart+maxVisible > len(v.state.PlaylistTracks) {
+				viewportStart = len(v.state.PlaylistTracks) - maxVisible
+			}
+			startIdx = viewportStart
+			endIdx = viewportStart + maxVisible
+		}
+
+		for i := startIdx; i < endIdx; i++ {
+			track := v.state.PlaylistTracks[i]
+			line := v.formatModalTrackLine(track, i, i == v.state.SelectedModalIndex)
+			content.WriteString(line)
+			content.WriteString("\n")
+		}
+
+		// Show scroll indicator if there are more tracks
+		if len(v.state.PlaylistTracks) > maxVisible {
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d tracks",
+				startIdx+1, endIdx, len(v.state.PlaylistTracks)))
 		}
 	}
 
@@ -1003,7 +1192,7 @@ func (v *MainView) formatModalTrackLine(track models.Track, index int, selected 
 	} else {
 		trackNum = fmt.Sprintf("%2d. ", index+1)
 	}
-	
+
 	// Format duration (seconds to mm:ss)
 	duration := ""
 	if track.Duration > 0 {
@@ -1011,34 +1200,34 @@ func (v *MainView) formatModalTrackLine(track models.Track, index int, selected 
 		seconds := track.Duration % 60
 		duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
 	}
-	
-	line := fmt.Sprintf("%s%s%s", trackNum, track.Title, duration)
-	
+
+	line := fmt.Sprintf("%s%s - %s%s", trackNum, track.Artist, track.Title, duration)
+
 	if selected {
 		return v.styles.ActiveField.Render("> " + line)
 	}
-	
+
 	return "  " + line
 }
 
-// formatModalAlbumLine formats an album line for modal display  
+// formatModalAlbumLine formats an album line for modal display
 func (v *MainView) formatModalAlbumLine(album models.Album, selected bool) string {
 	// Format: [Year] Album Name (Tracks)
 	yearStr := ""
 	if album.Year > 0 {
 		yearStr = fmt.Sprintf("[%d] ", album.Year)
 	}
-	
+
 	line := fmt.Sprintf("%s%s (%d tracks)", yearStr, album.Name, album.TrackCount)
-	
+
 	if selected {
 		return v.styles.ActiveField.Render("> " + line)
 	}
-	
+
 	return "  " + line
 }
 
-// overlayModal overlays a modal on the background content using lipgloss positioning  
+// overlayModal overlays a modal on the background content using lipgloss positioning
 func (v *MainView) overlayModal(_ /* background */, modal string, modalWidth, modalHeight int) string {
 	// Ensure we have valid dimensions
 	width := v.width
@@ -1049,33 +1238,33 @@ func (v *MainView) overlayModal(_ /* background */, modal string, modalWidth, mo
 	if height <= 0 {
 		height = 24
 	}
-	
+
 	// Use lipgloss to properly position the modal
 	modalStyle := v.styles.ModalBorder.Copy().
 		Width(modalWidth-4). // Account for border and padding
 		Height(modalHeight-4).
 		Align(lipgloss.Center, lipgloss.Center)
-	
+
 	// Position the modal in the center of the available space
 	positionedModal := lipgloss.Place(
 		width, height,
 		lipgloss.Center, lipgloss.Center,
 		modalStyle.Render(modal),
 	)
-	
+
 	return positionedModal
 }
 
 // renderSearchModalOverlay renders the search modal overlay
 func (v *MainView) renderSearchModalOverlay(background string) string {
 	var content strings.Builder
-	
+
 	// Modal header
 	content.WriteString("🔍 Global Search\n\n")
-	
+
 	// Search input box
 	content.WriteString(fmt.Sprintf("Search: %s█\n\n", v.state.SearchQuery))
-	
+
 	if v.state.LoadingSearchResults {
 		content.WriteString("Searching...")
 	} else if len(v.state.SearchQuery) == 0 {
@@ -1083,14 +1272,14 @@ func (v *MainView) renderSearchModalOverlay(background string) string {
 		content.WriteString("↑↓ Navigate • Enter to select • Esc to close")
 	} else {
 		results := v.state.SearchResults
-		
+
 		if len(results.Artists) == 0 && len(results.Albums) == 0 && len(results.Tracks) == 0 {
 			content.WriteString("No results found")
 		} else {
 			content.WriteString("↑↓ Navigate • Enter: Play & queue remaining • Shift+Enter: Queue only • Esc to close\n\n")
-			
+
 			currentIndex := 0
-			
+
 			// Artists section
 			if len(results.Artists) > 0 {
 				content.WriteString("🎤 Artists:\n")
@@ -1114,7 +1303,7 @@ func (v *MainView) renderSearchModalOverlay(background string) string {
 				}
 				content.WriteString("\n")
 			}
-			
+
 			// Albums section
 			if len(results.Albums) > 0 {
 				content.WriteString("💿 Albums:\n")
@@ -1138,7 +1327,7 @@ func (v *MainView) renderSearchModalOverlay(background string) string {
 				}
 				content.WriteString("\n")
 			}
-			
+
 			// Tracks section
 			if len(results.Tracks) > 0 {
 				content.WriteString("🎵 Tracks:\n")
@@ -1174,13 +1363,13 @@ func (v *MainView) formatSearchArtistLine(artist models.Artist, selected bool) s
 	if artist.StarredAt != nil {
 		starred = "★ "
 	}
-	
+
 	line := fmt.Sprintf("%s%s (%d albums)", starred, artist.Name, artist.AlbumCount)
-	
+
 	if selected {
 		return v.styles.ActiveField.Render("> " + line)
 	}
-	
+
 	return "  " + line
 }
 
@@ -1190,13 +1379,13 @@ func (v *MainView) formatSearchAlbumLine(album models.Album, selected bool) stri
 	if album.Year > 0 {
 		year = fmt.Sprintf("[%d] ", album.Year)
 	}
-	
+
 	line := fmt.Sprintf("%s%s - %s (%d tracks)", year, album.Artist, album.Name, album.TrackCount)
-	
+
 	if selected {
 		return v.styles.ActiveField.Render("> " + line)
 	}
-	
+
 	return "  " + line
 }
 
@@ -1209,20 +1398,20 @@ func (v *MainView) formatSearchTrackLine(track models.Track, selected bool) stri
 		seconds := track.Duration % 60
 		duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
 	}
-	
+
 	line := fmt.Sprintf("%s - %s (%s)%s", track.Artist, track.Title, track.Album, duration)
-	
+
 	if selected {
 		return v.styles.ActiveField.Render("> " + line)
 	}
-	
+
 	return "  " + line
 }
 
 // renderSortModalOverlay renders the sort modal overlay
 func (v *MainView) renderSortModalOverlay(background string) string {
 	var content strings.Builder
-	
+
 	// Modal header
 	contextName := ""
 	switch v.state.CurrentSortContext {
@@ -1234,32 +1423,32 @@ func (v *MainView) renderSortModalOverlay(background string) string {
 		contextName = "Playlists"
 	}
 	content.WriteString(fmt.Sprintf("🔧 Sort %s\n\n", contextName))
-	
+
 	// Instructions
 	content.WriteString("↑↓ Navigate • Enter to apply sort • Esc to cancel\n\n")
-	
+
 	// Get available sort options for current context
 	availableOptions := v.getAvailableSortOptions()
-	
+
 	if len(availableOptions) == 0 {
 		content.WriteString("No sort options available for this context")
 	} else {
 		// Render sort options
 		for i, option := range availableOptions {
 			selected := i == v.state.SelectedSortIndex
-			
+
 			line := option.DisplayName
 			if selected {
 				line = v.styles.ActiveField.Render("> " + line)
 			} else {
 				line = "  " + line
 			}
-			
+
 			content.WriteString(line)
 			content.WriteString("\n")
 		}
 	}
-	
+
 	// Center the modal overlay
 	return v.overlayModal(background, content.String(), 50, 15)
 }

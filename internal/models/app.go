@@ -86,6 +86,7 @@ type Playlist struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Comment   string    `json:"comment"`
+	Owner     string    `json:"owner"`
 	Public    bool      `json:"public"`
 	SongCount int       `json:"songCount"`
 	Duration  int       `json:"duration"`
@@ -133,14 +134,16 @@ type AppState struct {
 	Playlists     []Playlist
 	
 	// UI state
-	LoadingAlbums  bool
-	LoadingArtists bool
-	LoadingError   string
+	LoadingAlbums    bool
+	LoadingArtists   bool
+	LoadingPlaylists bool
+	LoadingError     string
 	
 	// Selection state
-	SelectedAlbumIndex int
-	SelectedArtistIndex int
-	SelectedQueueIndex int
+	SelectedAlbumIndex    int
+	SelectedArtistIndex   int
+	SelectedPlaylistIndex int
+	SelectedQueueIndex    int
 	
 	// Home tab navigation state
 	HomeSelectedSection  int  // 0=Recently Added, 1=Top Artists, 2=Most Played Albums, 3=Top Tracks
@@ -158,11 +161,14 @@ type AppState struct {
 	// Modal state
 	ShowAlbumModal      bool
 	ShowArtistModal     bool
+	ShowPlaylistModal   bool
 	ShowSearchModal     bool
 	SelectedAlbum       *Album
 	SelectedArtist      *Artist
+	SelectedPlaylist    *Playlist
 	AlbumTracks         []Track
 	ArtistAlbums        []Album
+	PlaylistTracks      []Track
 	SelectedModalIndex  int
 	LoadingModalContent bool
 	

@@ -56,8 +56,13 @@ Terminal-based Navidrome music player with graphical TUI interface, intuitive na
    - Global search (Shift+F) provides track discovery
    - Modal navigation from Albums/Artists provides track access
 
-5. **Playlists** - User playlists management (Not Implemented)
-   - [ ] View, create, edit playlists (Planned)
+5. **Playlists** ✅ - User playlists management with full modal navigation
+   - ✅ View all user playlists with track counts and metadata
+   - ✅ Enter: View playlist tracks in modal with track-by-track navigation
+   - ✅ Alt+Enter/A: Queue entire playlist immediately
+   - ✅ Modal: Play from any track + queue remainder
+   - ✅ PgUp/PgDn navigation support for large playlists
+   - [ ] Create, edit, delete playlists (Planned for Phase 2)
 
 6. **Queue** ✅ - Current playback queue with full controls
    - ✅ Visual queue management with navigation

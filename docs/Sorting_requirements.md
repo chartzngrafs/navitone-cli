@@ -5,6 +5,6 @@ ok we are going to work on a new feature in Navitone-cli. Read @README.md and fa
 
     2. we are going to use SHIFT+S for sortings 
 
-    3. SHIFT+S will open a sorting modal in all contexts (Albums, Artists, and Playslists) 
+    3. SHIFT+S will open a sorting modal in all contexts (Albums, Artists, and Playlists) 
 
     4. Sorting options should be (Alpha, Date Added, Play Count, Album Artist (for Albums), and by Year (metadata)
