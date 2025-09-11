@@ -30,14 +30,14 @@ Terminal-based Navidrome music player with graphical TUI interface, intuitive na
 - No vim-like keybindings - standard shortcuts only (Ctrl+C, Ctrl+V, Tab, Enter, arrows)
 - Mouse support (Phase 2, but build foundation in Phase 1 if feasible)
 
-### Interface Sections (Tabs) ✅ ENHANCED
-1. **Home** - Default startup view (Partial Implementation)
-   - Library overview and statistics
-   - Recently Added Albums (basic implementation)
-   - Top Artists by album count
-   - [ ] Recently Played Albums (Planned)
-   - [ ] Most Played Albums (Planned)
-   - [ ] Random Albums (Planned)
+### Interface Sections (Tabs) ✅ ENHANCED - 6 Tabs Total
+1. **Home** ✅ ENHANCED - Interactive music dashboard with real play count data
+   - Library overview and queue status
+   - Recently Added Albums (8 albums with play counts)
+   - Top Artists (5 artists by aggregated play count)  
+   - Most Played Albums (8 albums sorted by actual play count)
+   - Top Tracks (10 tracks from most played albums)
+   - ↑↓ navigation between sections, Enter/Shift+Enter actions
 
 2. **Albums** ✅ - Browse all albums with enhanced modal navigation
    - Live data from Navidrome with pagination
@@ -51,10 +51,10 @@ Terminal-based Navidrome music player with graphical TUI interface, intuitive na
    - Modal navigation: Albums → Tracks with seamless transitions
    - Alt+Enter/A: Queue all albums from artist
 
-4. **Tracks** ✅ - Browse individual tracks with direct queuing
-   - Random tracks from library
-   - Enter: Add individual tracks to queue
-   - [ ] Sorting options (Planned)
+4. **Tracks** ✅ REMOVED - Track browsing now available through modals and global search
+   - Functionality moved to Home tab Top Tracks section
+   - Global search (Shift+F) provides track discovery
+   - Modal navigation from Albums/Artists provides track access
 
 5. **Playlists** - User playlists management (Not Implemented)
    - [ ] View, create, edit playlists (Planned)
@@ -64,7 +64,13 @@ Terminal-based Navidrome music player with graphical TUI interface, intuitive na
    - ✅ Play from any track in queue
    - ✅ Remove individual tracks (X/Del)
    - ✅ Clear entire queue (C)
-   - ✅ Real-time playback controls
+   - ✅ Real-time playback controls with MPV backend
+
+7. **Config** ✅ - Interactive configuration with validation
+   - ✅ Navidrome server settings with connection testing
+   - ✅ Last.fm and ListenBrainz scrobbling configuration
+   - ✅ Audio settings (volume, device, buffer size)
+   - ✅ Form-based interface with field validation
 
 ### Key Features ✅ IMPLEMENTED
 - ✅ Context-aware help menu overlay with comprehensive keybinding documentation
@@ -72,7 +78,8 @@ Terminal-based Navidrome music player with graphical TUI interface, intuitive na
 - ✅ Enhanced keybindings (Alt+Enter quick actions, context-aware controls)
 - ✅ Smart queue management (play from any track, queue remainder automatically)
 - ✅ Intuitive navigation flow that "just makes sense"
-- [ ] Sorting options available across all browse views (Planned)
+- ✅ Enhanced Global Search (Shift+F) - intelligent pagination, dual-mode playback
+- [ ] Sorting options available across all browse views (Planned - Shift+S)
 - ✅ Multiple ways to add content to queue from any view
 
 ## Navidrome Integration
@@ -87,10 +94,10 @@ Terminal-based Navidrome music player with graphical TUI interface, intuitive na
 
 ## Development Phases
 
-### Phase 1 (Core Functionality) ✅ MOSTLY COMPLETE
+### Phase 1 (Core Functionality) ✅ COMPLETE
 - ✅ All interface tabs and navigation with enhanced modal system
-- ✅ Audio playbook with format support (COMPLETE - MP3, FLAC, OGG, WAV)
-- ✅ Audio encoding/decoding pipeline (COMPLETE - proper PCM conversion)
+- ✅ MPV-powered audio backend (COMPLETE - universal format support)
+- ✅ Professional audio pipeline via MPV (COMPLETE - streaming, seeking, gapless)
 - ✅ Navidrome API integration (COMPLETE - full Subsonic API support)
 - ✅ Queue management (COMPLETE - add, remove, clear, smart playback)
 - ✅ Enhanced navigation system (COMPLETE - modal flows, Alt+Enter shortcuts)

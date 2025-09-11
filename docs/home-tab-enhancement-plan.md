@@ -20,7 +20,7 @@ This document outlines the implementation plan for enhancing the Home tab and re
 - Has dedicated key handler (`handleTracksKeyPress`)
 - Renders random tracks with basic navigation
 - Made obsolete by:
-  - Global search (Shift+S) for finding specific tracks
+  - Global search (Shift+F) for finding specific tracks
   - Album/Artist modal navigation for browsing tracks
   - Better user experience through contextual browsing
 

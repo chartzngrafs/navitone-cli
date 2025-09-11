@@ -85,6 +85,9 @@ func (v *MainView) Render() string {
 	if v.state.ShowSearchModal {
 		return v.renderSearchModalOverlay(content)
 	}
+	if v.state.ShowSortModal {
+		return v.renderSortModalOverlay(content)
+	}
 
 	return content
 }
@@ -159,7 +162,7 @@ func (v *MainView) renderContent() string {
 // renderFooter creates a simple footer with basic info (player module handles playback details)
 func (v *MainView) renderFooter() string {
 	// Simple footer with just navigation hints since player module handles playback
-	footer := "Tab/Shift+Tab: Switch tabs | Shift+S: Global Search | Ctrl+C/q: Quit"
+	footer := "Tab/Shift+Tab: Switch tabs | Shift+F: Global Search | Shift+S: Sort | Ctrl+C/q: Quit"
 	
 	// Ensure footer has a valid width
 	footerWidth := v.width
@@ -198,7 +201,7 @@ func (v *MainView) renderHomeTab() string {
 	}
 	
 	// Instructions
-	content.WriteString("↑↓ Navigate • Enter/Shift+Enter to select • R to refresh\n\n")
+	content.WriteString("↑↓ Navigate • PgUp/PgDn Jump sections • Enter/Shift+Enter to select • R to refresh\n\n")
 	
 	// Render all four sections vertically
 	content.WriteString(v.renderHomeSections())
@@ -445,27 +448,27 @@ func (v *MainView) renderAlbumsTab() string {
 	var content strings.Builder
 	content.WriteString("💿 Albums\n\n")
 	
-	// Show instructions with MORE option if available
-	instructions := "↑↓ Navigate • Enter to view tracks • Alt+Enter/A to queue album • R to refresh"
-	if v.state.AlbumsHasMore {
-		instructions += " • M for more"
-	}
+	// Show instructions
+	instructions := "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter to view tracks • Alt+Enter/A to queue album • R to refresh • Shift+S to sort"
 	content.WriteString(instructions + "\n\n")
 	
-	// Render album list
+	// Render all albums with smart viewport for large lists
 	startIdx := 0
 	endIdx := len(v.state.Albums)
 	
-	// Limit visible items (simple pagination)
-	maxVisible := 20
-	if endIdx > maxVisible {
-		if v.state.SelectedAlbumIndex >= maxVisible {
-			startIdx = v.state.SelectedAlbumIndex - maxVisible + 1
+	// For very large lists, show a window around the selected item
+	maxVisible := 25 // Show more items since we removed pagination
+	if len(v.state.Albums) > maxVisible {
+		// Center the viewport around the selected item
+		viewportStart := v.state.SelectedAlbumIndex - maxVisible/2
+		if viewportStart < 0 {
+			viewportStart = 0
 		}
-		endIdx = startIdx + maxVisible
-		if endIdx > len(v.state.Albums) {
-			endIdx = len(v.state.Albums)
+		if viewportStart+maxVisible > len(v.state.Albums) {
+			viewportStart = len(v.state.Albums) - maxVisible
 		}
+		startIdx = viewportStart
+		endIdx = viewportStart + maxVisible
 	}
 	
 	for i := startIdx; i < endIdx; i++ {
@@ -475,20 +478,14 @@ func (v *MainView) renderAlbumsTab() string {
 		content.WriteString("\n")
 	}
 	
-	// Show pagination info
-	if len(v.state.Albums) > maxVisible {
-		paginationInfo := fmt.Sprintf("\nShowing %d-%d of %d albums", 
-			startIdx+1, endIdx, len(v.state.Albums))
-		if v.state.AlbumsHasMore {
-			paginationInfo += " (more available - press M to load)"
+	// Show total count
+	if len(v.state.Albums) > 0 {
+		if len(v.state.Albums) > maxVisible {
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d albums", 
+				startIdx+1, endIdx, len(v.state.Albums)))
+		} else {
+			content.WriteString(fmt.Sprintf("\n%d albums total", len(v.state.Albums)))
 		}
-		content.WriteString(paginationInfo)
-	} else if len(v.state.Albums) > 0 {
-		albumInfo := fmt.Sprintf("\n%d albums", len(v.state.Albums))
-		if v.state.AlbumsHasMore {
-			albumInfo += " (more available - press M to load)"
-		}
-		content.WriteString(albumInfo)
 	}
 	
 	return content.String()
@@ -527,23 +524,26 @@ func (v *MainView) renderArtistsTab() string {
 	var content strings.Builder
 	content.WriteString("🎤 Artists\n\n")
 	
-	// Show instructions
-	content.WriteString("↑↓ Navigate • Enter to view albums • R to refresh\n\n")
+	// Show instructions  
+	content.WriteString("↑↓ Navigate • PgUp/PgDn Jump 25 • Enter to view albums • R to refresh • Shift+S to sort\n\n")
 	
-	// Render artist list
+	// Render all artists with smart viewport for large lists
 	startIdx := 0
 	endIdx := len(v.state.Artists)
 	
-	// Limit visible items (simple pagination)
-	maxVisible := 20
-	if endIdx > maxVisible {
-		if v.state.SelectedArtistIndex >= maxVisible {
-			startIdx = v.state.SelectedArtistIndex - maxVisible + 1
+	// For very large lists, show a window around the selected item
+	maxVisible := 25 // Show more items since we removed pagination
+	if len(v.state.Artists) > maxVisible {
+		// Center the viewport around the selected item
+		viewportStart := v.state.SelectedArtistIndex - maxVisible/2
+		if viewportStart < 0 {
+			viewportStart = 0
 		}
-		endIdx = startIdx + maxVisible
-		if endIdx > len(v.state.Artists) {
-			endIdx = len(v.state.Artists)
+		if viewportStart+maxVisible > len(v.state.Artists) {
+			viewportStart = len(v.state.Artists) - maxVisible
 		}
+		startIdx = viewportStart
+		endIdx = viewportStart + maxVisible
 	}
 	
 	for i := startIdx; i < endIdx; i++ {
@@ -553,10 +553,14 @@ func (v *MainView) renderArtistsTab() string {
 		content.WriteString("\n")
 	}
 	
-	// Show pagination info if needed
-	if len(v.state.Artists) > maxVisible {
-		content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d artists", 
-			startIdx+1, endIdx, len(v.state.Artists)))
+	// Show total count
+	if len(v.state.Artists) > 0 {
+		if len(v.state.Artists) > maxVisible {
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d artists", 
+				startIdx+1, endIdx, len(v.state.Artists)))
+		} else {
+			content.WriteString(fmt.Sprintf("\n%d artists total", len(v.state.Artists)))
+		}
 	}
 	
 	return content.String()
@@ -599,7 +603,7 @@ func (v *MainView) renderQueueTab() string {
 	}
 	
 	// Show instructions
-	content.WriteString(fmt.Sprintf("↑↓ Navigate • Enter/Space to play • X/Del to remove • C to clear all (%d tracks)\n\n", len(v.state.Queue)))
+	content.WriteString(fmt.Sprintf("↑↓ Navigate • PgUp/PgDn Jump 25 • Enter/Space to play • X/Del to remove • C to clear all (%d tracks)\n\n", len(v.state.Queue)))
 	
 	// Show current playing track if any
 	if v.state.CurrentTrack != nil {
@@ -1213,4 +1217,63 @@ func (v *MainView) formatSearchTrackLine(track models.Track, selected bool) stri
 	}
 	
 	return "  " + line
+}
+
+// renderSortModalOverlay renders the sort modal overlay
+func (v *MainView) renderSortModalOverlay(background string) string {
+	var content strings.Builder
+	
+	// Modal header
+	contextName := ""
+	switch v.state.CurrentSortContext {
+	case "albums":
+		contextName = "Albums"
+	case "artists":
+		contextName = "Artists"
+	case "playlists":
+		contextName = "Playlists"
+	}
+	content.WriteString(fmt.Sprintf("🔧 Sort %s\n\n", contextName))
+	
+	// Instructions
+	content.WriteString("↑↓ Navigate • Enter to apply sort • Esc to cancel\n\n")
+	
+	// Get available sort options for current context
+	availableOptions := v.getAvailableSortOptions()
+	
+	if len(availableOptions) == 0 {
+		content.WriteString("No sort options available for this context")
+	} else {
+		// Render sort options
+		for i, option := range availableOptions {
+			selected := i == v.state.SelectedSortIndex
+			
+			line := option.DisplayName
+			if selected {
+				line = v.styles.ActiveField.Render("> " + line)
+			} else {
+				line = "  " + line
+			}
+			
+			content.WriteString(line)
+			content.WriteString("\n")
+		}
+	}
+	
+	// Center the modal overlay
+	return v.overlayModal(background, content.String(), 50, 15)
+}
+
+// getAvailableSortOptions returns sort options available for the current context (view helper)
+func (v *MainView) getAvailableSortOptions() []models.SortOption {
+	var available []models.SortOption
+	for _, option := range models.SortOptions {
+		for _, applicable := range option.Applicable {
+			if applicable == v.state.CurrentSortContext {
+				available = append(available, option)
+				break
+			}
+		}
+	}
+	return available
 }

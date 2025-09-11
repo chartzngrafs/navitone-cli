@@ -71,10 +71,6 @@ func NewApp() *App {
 		Playlists:   make([]models.Playlist, 0),
 		LogMessages: make([]string, 0),
 		
-		// Initialize albums pagination
-		AlbumsOffset:   0,
-		AlbumsHasMore:  true,
-		
 		// Initialize Home tab state
 		HomeSelectedSection:  0, // Start with Recently Added section
 		HomeSelectedIndex:    0,
@@ -169,7 +165,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle modal navigation first
-		if a.state.ShowAlbumModal || a.state.ShowArtistModal || a.state.ShowSearchModal {
+		if a.state.ShowAlbumModal || a.state.ShowArtistModal || a.state.ShowSearchModal || a.state.ShowSortModal {
 			return a.handleModalKeyPress(msg)
 		}
 		return a.handleKeyPress(msg)
@@ -197,17 +193,41 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			a.state.LoadingError = msg.Error.Error()
 		} else {
-			if msg.Append {
-				// Append new albums to existing ones
-				a.state.Albums = append(a.state.Albums, msg.Albums...)
-				a.state.AlbumsOffset = msg.Offset + len(msg.Albums)
-			} else {
-				// Replace existing albums
-				a.state.Albums = msg.Albums
-				a.state.AlbumsOffset = len(msg.Albums)
-			}
-			a.state.AlbumsHasMore = msg.HasMore
+			// Replace with all albums
+			a.state.Albums = msg.Albums
 			a.state.LoadingError = ""
+		}
+		return a, nil
+	case AlbumsSortResult:
+		// Handle albums sort result
+		a.state.LoadingAlbums = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+			a.logMessage(fmt.Sprintf("Sort failed: %s", msg.Error.Error()))
+		} else if msg.UseInMemorySort {
+			// Fallback to in-memory sorting for unsupported API sorts (like year)
+			a.sortAlbumsInMemory(msg.SortBy)
+			a.logMessage(fmt.Sprintf("Sorted by %s (in-memory)", msg.SortBy))
+		} else {
+			// Use API-sorted results
+			a.state.Albums = msg.Albums
+			a.state.SelectedAlbumIndex = 0
+			a.state.LoadingError = ""
+			a.logMessage(fmt.Sprintf("Sorted by %s", msg.SortBy))
+		}
+		return a, nil
+	case ArtistsSortResult:
+		// Handle artists sort result  
+		if msg.UseInMemorySort {
+			a.sortArtistsInMemory(msg.SortBy)
+			a.logMessage(fmt.Sprintf("Sorted artists by %s", msg.SortBy))
+		}
+		return a, nil
+	case PlaylistsSortResult:
+		// Handle playlists sort result
+		if msg.UseInMemorySort {
+			a.sortPlaylistsInMemory(msg.SortBy) 
+			a.logMessage(fmt.Sprintf("Sorted playlists by %s", msg.SortBy))
 		}
 		return a, nil
 	case ArtistsLoadResult:
@@ -368,7 +388,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.audioManager != nil {
 			a.audioManager.ToggleShuffle()
 			// Let normal Bubble Tea update cycle handle state sync to prevent race conditions
-			a.logMessage(fmt.Sprintf("Shuffle toggled"))
+			a.logMessage("Shuffle toggled")
 		} else {
 			a.state.IsShuffleMode = !a.state.IsShuffleMode
 		}
@@ -415,8 +435,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.state.Volume = int(newVolume * 100) // Sync UI state
 		}
 		return a, nil
-	case "shift+s", "S":
-		// Global: Shift+S - Open search modal
+	case "shift+f", "F":
+		// Global: Shift+F - Open search modal
 		a.state.ShowSearchModal = true
 		a.state.SearchQuery = ""
 		a.state.SearchResults = models.SearchResults{}
@@ -425,6 +445,24 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.state.SearchArtistsOffset = 0
 		a.state.SearchAlbumsOffset = 0
 		a.state.SearchTracksOffset = 0
+		return a, nil
+	case "shift+s", "S":
+		// Global: Shift+S - Open sort modal (only in sortable contexts)
+		if a.state.CurrentTab == models.AlbumsTab || 
+		   a.state.CurrentTab == models.ArtistsTab || 
+		   a.state.CurrentTab == models.PlaylistsTab {
+			a.state.ShowSortModal = true
+			a.state.SelectedSortIndex = 0
+			// Set context based on current tab
+			switch a.state.CurrentTab {
+			case models.AlbumsTab:
+				a.state.CurrentSortContext = "albums"
+			case models.ArtistsTab:
+				a.state.CurrentSortContext = "artists"
+			case models.PlaylistsTab:
+				a.state.CurrentSortContext = "playlists"
+			}
+		}
 		return a, nil
 	}
 
@@ -753,6 +791,12 @@ func (a *App) handleHomeKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		// Navigate down through all items across all sections
 		a.moveHomeSelectionDown()
+	case "pgup":
+		// Jump to previous section or move up significantly within current section
+		a.moveHomeSelectionPageUp()
+	case "pgdown":
+		// Jump to next section or move down significantly within current section
+		a.moveHomeSelectionPageDown()
 	case "enter":
 		// Handle selection based on current section
 		return a.handleHomeSelection(false) // false = play and queue
@@ -847,6 +891,59 @@ func (a *App) moveHomeSelectionDown() {
 	}
 }
 
+// moveHomeSelectionPageUp moves selection up by sections or large jumps
+func (a *App) moveHomeSelectionPageUp() {
+	// Jump to the beginning of the current section, or previous section if already at beginning
+	if a.state.HomeSelectedIndex == 0 && a.state.HomeSelectedSection > 0 {
+		// Jump to previous section
+		a.state.HomeSelectedSection--
+		switch a.state.HomeSelectedSection {
+		case 0:
+			a.state.HomeSelectedIndex = len(a.state.RecentlyAddedAlbums) - 1
+		case 1:
+			a.state.HomeSelectedIndex = len(a.state.TopArtistsByPlays) - 1
+		case 2:
+			a.state.HomeSelectedIndex = len(a.state.MostPlayedAlbums) - 1
+		case 3:
+			a.state.HomeSelectedIndex = len(a.state.TopTracks) - 1
+		}
+		if a.state.HomeSelectedIndex < 0 {
+			a.state.HomeSelectedIndex = 0
+		}
+	} else {
+		// Jump to beginning of current section
+		a.state.HomeSelectedIndex = 0
+	}
+}
+
+// moveHomeSelectionPageDown moves selection down by sections or large jumps  
+func (a *App) moveHomeSelectionPageDown() {
+	// Jump to the end of the current section, or next section if already at end
+	currentSectionSize := 0
+	switch a.state.HomeSelectedSection {
+	case 0:
+		currentSectionSize = len(a.state.RecentlyAddedAlbums)
+	case 1:
+		currentSectionSize = len(a.state.TopArtistsByPlays)
+	case 2:
+		currentSectionSize = len(a.state.MostPlayedAlbums)
+	case 3:
+		currentSectionSize = len(a.state.TopTracks)
+	}
+	
+	if a.state.HomeSelectedIndex == currentSectionSize-1 && a.state.HomeSelectedSection < 3 {
+		// Jump to next section
+		a.state.HomeSelectedSection++
+		a.state.HomeSelectedIndex = 0
+	} else {
+		// Jump to end of current section
+		a.state.HomeSelectedIndex = currentSectionSize - 1
+		if a.state.HomeSelectedIndex < 0 {
+			a.state.HomeSelectedIndex = 0
+		}
+	}
+}
+
 // handleHomeSelection handles when an item is selected in the home tab
 func (a *App) handleHomeSelection(queueOnly bool) (tea.Model, tea.Cmd) {
 	switch a.state.HomeSelectedSection {
@@ -911,6 +1008,18 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.SelectedAlbumIndex < len(a.state.Albums)-1 {
 			a.state.SelectedAlbumIndex++
 		}
+	case "pgup":
+		// Move up by 25 items
+		a.state.SelectedAlbumIndex -= 25
+		if a.state.SelectedAlbumIndex < 0 {
+			a.state.SelectedAlbumIndex = 0
+		}
+	case "pgdown":
+		// Move down by 25 items
+		a.state.SelectedAlbumIndex += 25
+		if a.state.SelectedAlbumIndex >= len(a.state.Albums) {
+			a.state.SelectedAlbumIndex = len(a.state.Albums) - 1
+		}
 	case "enter":
 		// Show album details modal (regular Enter)
 		if a.state.SelectedAlbumIndex < len(a.state.Albums) {
@@ -929,28 +1038,13 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		// Refresh albums
 		return a, a.loadAlbums()
-	case "m":
-		// Load more albums
-		if a.state.AlbumsHasMore && !a.state.LoadingAlbums {
-			return a, a.loadMoreAlbums()
-		}
 	}
 
 	return a, nil
 }
 
-// loadAlbums loads albums from Navidrome (initial load - replaces existing albums)
+// loadAlbums loads all albums from Navidrome library
 func (a *App) loadAlbums() tea.Cmd {
-	return a.loadAlbumsWithOffset(0, false)
-}
-
-// loadMoreAlbums loads more albums from Navidrome (appends to existing albums)
-func (a *App) loadMoreAlbums() tea.Cmd {
-	return a.loadAlbumsWithOffset(a.state.AlbumsOffset, true)
-}
-
-// loadAlbumsWithOffset loads albums with a specific offset
-func (a *App) loadAlbumsWithOffset(offset int, append bool) tea.Cmd {
 	if a.navidromeClient == nil {
 		return nil
 	}
@@ -959,12 +1053,13 @@ func (a *App) loadAlbumsWithOffset(offset int, append bool) tea.Cmd {
 	a.state.LoadingError = ""
 
 	return tea.Cmd(func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // Longer timeout for all albums
 		defer cancel()
 
-		resp, err := a.navidromeClient.GetAlbums(ctx, 50, offset)
+		// Load all albums by setting a very high limit
+		resp, err := a.navidromeClient.GetAlbums(ctx, 10000, 0)
 		if err != nil {
-			return AlbumsLoadResult{Error: err, Append: append}
+			return AlbumsLoadResult{Error: err}
 		}
 
 		// Convert Navidrome albums to our model
@@ -979,20 +1074,13 @@ func (a *App) loadAlbumsWithOffset(offset int, append bool) tea.Cmd {
 				Genre:      album.Genre,
 				Duration:   album.Duration,
 				TrackCount: album.SongCount,
+				PlayCount:  album.PlayCount,
 				CreatedAt:  album.Created,
 				CoverArt:   album.CoverArt,
 			}
 		}
 
-		// Check if there are more albums (if we got exactly 50, there might be more)
-		hasMore := len(albums) == 50
-
-		return AlbumsLoadResult{
-			Albums:  albums,
-			Append:  append,
-			HasMore: hasMore,
-			Offset:  offset,
-		}
+		return AlbumsLoadResult{Albums: albums}
 	})
 }
 
@@ -1327,6 +1415,18 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.SelectedArtistIndex < len(a.state.Artists)-1 {
 			a.state.SelectedArtistIndex++
 		}
+	case "pgup":
+		// Move up by 25 items
+		a.state.SelectedArtistIndex -= 25
+		if a.state.SelectedArtistIndex < 0 {
+			a.state.SelectedArtistIndex = 0
+		}
+	case "pgdown":
+		// Move down by 25 items
+		a.state.SelectedArtistIndex += 25
+		if a.state.SelectedArtistIndex >= len(a.state.Artists) {
+			a.state.SelectedArtistIndex = len(a.state.Artists) - 1
+		}
 	case "enter":
 		// Show artist albums modal
 		if a.state.SelectedArtistIndex < len(a.state.Artists) {
@@ -1340,46 +1440,6 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// addArtistToQueue adds all tracks from an artist to the queue
-func (a *App) addArtistToQueue(artist models.Artist) tea.Cmd {
-	return tea.Batch(
-		func() tea.Msg {
-			if a.navidromeClient == nil {
-				return ArtistTracksLoadResult{Error: fmt.Errorf("navidrome client not initialized")}
-			}
-
-			// Fetch actual tracks from the artist
-			resp, err := a.navidromeClient.GetArtistTracks(context.Background(), artist.ID)
-			if err != nil {
-				return ArtistTracksLoadResult{Error: err}
-			}
-
-			// Convert Navidrome songs to our model
-			tracks := make([]models.Track, len(resp.SubsonicResponse.SongsByGenre.Song))
-			for i, song := range resp.SubsonicResponse.SongsByGenre.Song {
-				tracks[i] = models.Track{
-					ID:       song.ID,
-					Title:    song.Title,
-					Artist:   song.Artist,
-					ArtistID: song.ArtistID,
-					Album:    song.Album,
-					AlbumID:  song.AlbumID,
-					Genre:    song.Genre,
-					Year:     song.Year,
-					Duration: song.Duration,
-					Track:    song.Track,
-					Disc:     song.DiscNumber,
-					Size:     song.Size,
-					Suffix:   song.Suffix,
-					BitRate:  song.BitRate,
-					Path:     song.Path,
-				}
-			}
-
-			return ArtistTracksLoadResult{Tracks: tracks}
-		},
-	)
-}
 
 // ArtistTracksLoadResult represents the result of loading artist tracks
 type ArtistTracksLoadResult struct {
@@ -1418,6 +1478,18 @@ func (a *App) handleQueueKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.SelectedQueueIndex < len(a.state.Queue)-1 {
 			a.state.SelectedQueueIndex++
 		}
+	case "pgup":
+		// Move up by 25 items
+		a.state.SelectedQueueIndex -= 25
+		if a.state.SelectedQueueIndex < 0 {
+			a.state.SelectedQueueIndex = 0
+		}
+	case "pgdown":
+		// Move down by 25 items
+		a.state.SelectedQueueIndex += 25
+		if a.state.SelectedQueueIndex >= len(a.state.Queue) {
+			a.state.SelectedQueueIndex = len(a.state.Queue) - 1
+		}
 	case "delete", "x":
 		// Remove selected track from queue
 		if a.audioManager != nil && a.state.SelectedQueueIndex < len(a.state.Queue) {
@@ -1451,11 +1523,8 @@ func (a *App) handleQueueKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // Message types for async operations
 type AlbumsLoadResult struct {
-	Albums  []models.Album
-	Error   error
-	Append  bool // Whether to append albums or replace existing ones
-	HasMore bool // Whether there are more albums to load
-	Offset  int  // The offset used for this load
+	Albums []models.Album
+	Error  error
 }
 
 type ArtistsLoadResult struct {
@@ -1589,16 +1658,24 @@ func (a *App) handleModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleSearchModalKeyPress(msg)
 	}
 	
+	// Handle sort modal
+	if a.state.ShowSortModal {
+		return a.handleSortModalKeyPress(msg)
+	}
+	
 	switch msg.String() {
 	case "esc", "q":
 		// Close modal
 		a.state.ShowAlbumModal = false
 		a.state.ShowArtistModal = false
+		a.state.ShowSortModal = false
 		a.state.SelectedAlbum = nil
 		a.state.SelectedArtist = nil
 		a.state.AlbumTracks = nil
 		a.state.ArtistAlbums = nil
 		a.state.SelectedModalIndex = 0
+		a.state.SelectedSortIndex = 0
+		a.state.CurrentSortContext = ""
 		return a, nil
 	case "up":
 		// Navigate up in modal
@@ -1759,6 +1836,80 @@ func (a *App) handleSearchModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, a.performSearch()
 		}
 	}
+	return a, nil
+}
+
+// handleSortModalKeyPress handles keyboard input in the sort modal
+func (a *App) handleSortModalKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		// Close sort modal
+		a.state.ShowSortModal = false
+		a.state.SelectedSortIndex = 0
+		a.state.CurrentSortContext = ""
+		return a, nil
+	case "enter":
+		// Apply selected sort
+		return a.applySorting()
+	case "up":
+		// Navigate up in sort options
+		if a.state.SelectedSortIndex > 0 {
+			a.state.SelectedSortIndex--
+		}
+		return a, nil
+	case "down":
+		// Navigate down in sort options
+		availableOptions := a.getAvailableSortOptions()
+		if a.state.SelectedSortIndex < len(availableOptions)-1 {
+			a.state.SelectedSortIndex++
+		}
+		return a, nil
+	}
+	return a, nil
+}
+
+// getAvailableSortOptions returns sort options available for the current context
+func (a *App) getAvailableSortOptions() []models.SortOption {
+	var available []models.SortOption
+	for _, option := range models.SortOptions {
+		for _, applicable := range option.Applicable {
+			if applicable == a.state.CurrentSortContext {
+				available = append(available, option)
+				break
+			}
+		}
+	}
+	return available
+}
+
+// applySorting applies the selected sort to the current context
+func (a *App) applySorting() (tea.Model, tea.Cmd) {
+	availableOptions := a.getAvailableSortOptions()
+	if a.state.SelectedSortIndex >= len(availableOptions) {
+		// Invalid selection, close modal
+		a.state.ShowSortModal = false
+		return a, nil
+	}
+	
+	selectedOption := availableOptions[a.state.SelectedSortIndex]
+	
+	// Close modal first and save context for use in switch
+	currentContext := a.state.CurrentSortContext
+	a.state.ShowSortModal = false
+	a.state.SelectedSortIndex = 0
+	a.state.CurrentSortContext = ""
+	a.logMessage(fmt.Sprintf("Sorting by: %s...", selectedOption.DisplayName))
+	
+	// Apply sorting based on context and option - return command for async operation
+	switch currentContext {
+	case "albums":
+		return a, a.sortAlbumsAsync(selectedOption.ID)
+	case "artists":
+		return a, a.sortArtistsAsync(selectedOption.ID)
+	case "playlists":
+		return a, a.sortPlaylistsAsync(selectedOption.ID)
+	}
+	
 	return a, nil
 }
 
@@ -2061,4 +2212,194 @@ func (a *App) loadMoreSearchResults(section string) tea.Cmd {
 			Error:   nil,
 		}
 	})
+}
+
+// sortAlbumsAsync sorts albums using Navidrome API calls for accurate sorting
+func (a *App) sortAlbumsAsync(sortBy string) tea.Cmd {
+	if a.navidromeClient == nil {
+		return nil
+	}
+
+	a.state.LoadingAlbums = true
+	a.state.LoadingError = ""
+
+	return tea.Cmd(func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		var albumType string
+		switch sortBy {
+		case "alpha":
+			albumType = "alphabeticalByName"
+		case "album_artist":
+			albumType = "alphabeticalByArtist"
+		case "date_added":
+			albumType = "newest"
+		case "play_count":
+			albumType = "frequent"
+		case "year":
+			// Year sorting not directly supported by API, fallback to in-memory
+			return AlbumsSortResult{SortBy: sortBy, UseInMemorySort: true}
+		default:
+			albumType = "alphabeticalByName"
+		}
+
+		// Load ALL albums for sorting
+		resp, err := a.navidromeClient.GetAlbumsByType(ctx, albumType, 10000, 0)
+		if err != nil {
+			return AlbumsSortResult{Error: err, SortBy: sortBy}
+		}
+
+		// Convert Navidrome albums to our model
+		albums := make([]models.Album, len(resp.SubsonicResponse.AlbumList2.Album))
+		for i, album := range resp.SubsonicResponse.AlbumList2.Album {
+			albums[i] = models.Album{
+				ID:         album.ID,
+				Name:       album.Name,
+				Artist:     album.Artist,
+				ArtistID:   album.ArtistID,
+				Year:       album.Year,
+				Genre:      album.Genre,
+				Duration:   album.Duration,
+				TrackCount: album.SongCount,
+				PlayCount:  album.PlayCount,
+				CreatedAt:  album.Created,
+				CoverArt:   album.CoverArt,
+			}
+		}
+
+		return AlbumsSortResult{Albums: albums, SortBy: sortBy}
+	})
+}
+
+// AlbumsSortResult represents the result of an album sort operation
+type AlbumsSortResult struct {
+	Albums          []models.Album
+	SortBy          string
+	UseInMemorySort bool // Flag to indicate fallback to in-memory sorting
+	Error           error
+}
+
+// sortAlbumsInMemory sorts albums in memory (fallback for API-unsupported sorts)
+func (a *App) sortAlbumsInMemory(sortBy string) {
+	albums := a.state.Albums
+	switch sortBy {
+	case "year":
+		// Sort by year (descending - newest first)
+		for i := 0; i < len(albums)-1; i++ {
+			for j := 0; j < len(albums)-i-1; j++ {
+				if albums[j].Year < albums[j+1].Year {
+					albums[j], albums[j+1] = albums[j+1], albums[j]
+				}
+			}
+		}
+	// Add other fallback sorts if needed
+	}
+	
+	// Reset selection to the beginning after sorting
+	a.state.SelectedAlbumIndex = 0
+}
+
+// sortArtistsAsync sorts artists using in-memory sorting (API doesn't have great artist sorting)
+func (a *App) sortArtistsAsync(sortBy string) tea.Cmd {
+	return tea.Cmd(func() tea.Msg {
+		// For artists, we'll use in-memory sorting since API doesn't provide good sorting options
+		return ArtistsSortResult{SortBy: sortBy, UseInMemorySort: true}
+	})
+}
+
+// ArtistsSortResult represents the result of an artist sort operation
+type ArtistsSortResult struct {
+	SortBy          string
+	UseInMemorySort bool
+	Error           error
+}
+
+// sortArtistsInMemory sorts artists in memory
+func (a *App) sortArtistsInMemory(sortBy string) {
+	artists := a.state.Artists
+	switch sortBy {
+	case "alpha":
+		// Sort alphabetically by artist name
+		for i := 0; i < len(artists)-1; i++ {
+			for j := 0; j < len(artists)-i-1; j++ {
+				if artists[j].Name > artists[j+1].Name {
+					artists[j], artists[j+1] = artists[j+1], artists[j]
+				}
+			}
+		}
+	case "play_count":
+		// Sort by play count (descending - most played first)
+		for i := 0; i < len(artists)-1; i++ {
+			for j := 0; j < len(artists)-i-1; j++ {
+				if artists[j].PlayCount < artists[j+1].PlayCount {
+					artists[j], artists[j+1] = artists[j+1], artists[j]
+				}
+			}
+		}
+	case "date_added":
+		// For artists, sort by album count as a proxy for date added
+		for i := 0; i < len(artists)-1; i++ {
+			for j := 0; j < len(artists)-i-1; j++ {
+				if artists[j].AlbumCount < artists[j+1].AlbumCount {
+					artists[j], artists[j+1] = artists[j+1], artists[j]
+				}
+			}
+		}
+	}
+	
+	// Reset selection to the beginning after sorting
+	a.state.SelectedArtistIndex = 0
+}
+
+// sortPlaylistsAsync sorts playlists using in-memory sorting
+func (a *App) sortPlaylistsAsync(sortBy string) tea.Cmd {
+	return tea.Cmd(func() tea.Msg {
+		// For playlists, we'll use in-memory sorting since playlists tab is not fully implemented
+		return PlaylistsSortResult{SortBy: sortBy, UseInMemorySort: true}
+	})
+}
+
+// PlaylistsSortResult represents the result of a playlist sort operation
+type PlaylistsSortResult struct {
+	SortBy          string
+	UseInMemorySort bool
+	Error           error
+}
+
+// sortPlaylistsInMemory sorts playlists in memory
+func (a *App) sortPlaylistsInMemory(sortBy string) {
+	playlists := a.state.Playlists
+	switch sortBy {
+	case "alpha":
+		// Sort alphabetically by playlist name
+		for i := 0; i < len(playlists)-1; i++ {
+			for j := 0; j < len(playlists)-i-1; j++ {
+				if playlists[j].Name > playlists[j+1].Name {
+					playlists[j], playlists[j+1] = playlists[j+1], playlists[j]
+				}
+			}
+		}
+	case "date_added":
+		// Sort by creation date (descending - newest first)
+		for i := 0; i < len(playlists)-1; i++ {
+			for j := 0; j < len(playlists)-i-1; j++ {
+				if playlists[j].CreatedAt.Before(playlists[j+1].CreatedAt) {
+					playlists[j], playlists[j+1] = playlists[j+1], playlists[j]
+				}
+			}
+		}
+	case "play_count":
+		// Sort by song count as a proxy for activity level
+		for i := 0; i < len(playlists)-1; i++ {
+			for j := 0; j < len(playlists)-i-1; j++ {
+				if playlists[j].SongCount < playlists[j+1].SongCount {
+					playlists[j], playlists[j+1] = playlists[j+1], playlists[j]
+				}
+			}
+		}
+	}
+	
+	// Reset selection to the beginning after sorting  
+	// Note: Playlists might not have a selection index yet, this will be added when Playlists tab is implemented
 }

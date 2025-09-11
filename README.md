@@ -28,7 +28,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking
 - **Modal System** - Seamless navigation flow with context-aware controls
 - **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
-- **Enhanced Global Search** - Shift+S modal search with intelligent result limiting, pagination, and dual-mode playback
+- **Enhanced Global Search** - Shift+F modal search with intelligent result limiting, pagination, and dual-mode playback
 - **Scrobbling System** - Full Last.fm and ListenBrainz support with Now Playing updates
 - **Process Management** - Proper MPV lifecycle with graceful shutdown and cleanup
 
@@ -97,7 +97,7 @@ navitone-cli/
 - **Enhanced Home Tab** - Browse top tracks directly in Home tab with seamless navigation
 - **Album Modals** - Access all tracks from any album with detailed track listings
 - **Artist Modals** - Browse artist albums and access their tracks through nested navigation  
-- **Global Search** - Shift+S to search and find specific tracks across your entire library
+- **Global Search** - Shift+F to search and find specific tracks across your entire library
 
 ### 📋 Playlists
 - **Not Implemented** - Currently shows "Coming soon"
@@ -173,7 +173,7 @@ The application will automatically download required Go dependencies:
 
 ### Basic Navigation
 - **Tab/Shift+Tab** - Switch between tabs
-- **Shift+S** - Enhanced global search with intelligent pagination and dual-mode playback
+- **Shift+F** - Enhanced global search with intelligent pagination and dual-mode playback
 - **Ctrl+C or q** - Quit application
 
 ### First Run Setup
@@ -209,7 +209,7 @@ The application will automatically download required Go dependencies:
 
 ### Enhanced Navigation & Playback ✅ WORKING
 - **Global Playback**: Space (play/pause), Alt+Left/Right (previous/next track)
-- **Enhanced Global Search**: Shift+S opens intelligent search modal with:
+- **Enhanced Global Search**: Shift+F opens intelligent search modal with:
   - Smart result limiting (5 per section: Artists, Albums, Tracks)
   - "MORE" pagination options for browsing additional results
   - Dual-mode playback: Enter (play + queue remaining) vs Shift+Enter (queue only)
@@ -292,7 +292,7 @@ go build -o bin/navitone ./cmd/navitone
 - [x] **Queue Management** - Complete playback controls with volume and seeking
 - [x] **Modal System** - Intuitive navigation flow with context-aware controls  
 - [x] **Enhanced Keybindings** - Clean, conventional shortcuts without vim-style navigation
-- [x] **Enhanced Global Search** - Shift+S modal with intelligent pagination, dual-mode playback, and smart result limiting
+- [x] **Enhanced Global Search** - Shift+F modal with intelligent pagination, dual-mode playback, and smart result limiting
 - [x] **Interactive Home Tab** - Enhanced with 4 curated sections, seamless ↑↓ navigation, and real play count data integration
 - [x] **Process Management** - Proper MPV lifecycle with graceful shutdown
 - [x] **Scrobbling Support** - Last.fm and ListenBrainz with Now Playing updates

@@ -100,6 +100,22 @@ type SearchResults struct {
 	Tracks  []Track
 }
 
+// SortOption represents different sorting options
+type SortOption struct {
+	ID          string
+	DisplayName string
+	Applicable  []string // Which contexts this sort applies to: "albums", "artists", "playlists"
+}
+
+// Available sorting options
+var SortOptions = []SortOption{
+	{ID: "alpha", DisplayName: "Alphabetical", Applicable: []string{"albums", "artists", "playlists"}},
+	{ID: "date_added", DisplayName: "Date Added", Applicable: []string{"albums", "artists", "playlists"}},
+	{ID: "play_count", DisplayName: "Play Count", Applicable: []string{"albums", "artists", "playlists"}},
+	{ID: "album_artist", DisplayName: "Album Artist", Applicable: []string{"albums"}},
+	{ID: "year", DisplayName: "Year", Applicable: []string{"albums"}},
+}
+
 // AppState represents the current state of the application
 type AppState struct {
 	CurrentTab    Tab
@@ -120,10 +136,6 @@ type AppState struct {
 	LoadingAlbums  bool
 	LoadingArtists bool
 	LoadingError   string
-	
-	// Albums pagination
-	AlbumsOffset   int  // Current offset for loaded albums
-	AlbumsHasMore  bool // Whether there are more albums to load
 	
 	// Selection state
 	SelectedAlbumIndex int
@@ -162,6 +174,11 @@ type AppState struct {
 	SearchArtistsOffset int
 	SearchAlbumsOffset  int
 	SearchTracksOffset  int
+	
+	// Sorting state
+	ShowSortModal      bool
+	SelectedSortIndex  int
+	CurrentSortContext string // "albums", "artists", "playlists"
 	
 	// Log state (for contained event logging)
 	LogMessages []string
