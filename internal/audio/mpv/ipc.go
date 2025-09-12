@@ -53,6 +53,10 @@ type MPVEvent struct {
 	Duration float64 `json:"duration,omitempty"`
 	Pause    bool    `json:"pause,omitempty"`
 	EOF      bool    `json:"eof-reached,omitempty"`
+	
+	// Property change specific fields
+	ID   int         `json:"id,omitempty"`
+	Name string      `json:"name,omitempty"`
 }
 
 // NewIPCClient creates a new IPC client for the given socket path

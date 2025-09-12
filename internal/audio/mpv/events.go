@@ -160,26 +160,28 @@ func (p *EventProcessor) ProcessEvent(event MPVEvent) {
 
 // handlePropertyChange processes property change events
 func (p *EventProcessor) handlePropertyChange(event MPVEvent) {
-	// Try to extract property change data
-	propertyData := map[string]interface{}{}
+	// MPV property-change events have this structure:
+	// {"event": "property-change", "id": 1, "name": "playback-time", "data": 42.5}
 	
-	// MPV sends property changes with different structures
-	// Handle common property names we care about
-	if event.Position > 0 {
-		propertyData["position"] = event.Position
-	}
-	if event.Duration > 0 {
-		propertyData["duration"] = event.Duration
-	}
-	if event.Pause {
-		propertyData["paused"] = true
-	}
-	
-	if len(propertyData) > 0 {
-		if _, hasPosition := propertyData["position"]; hasPosition {
-			p.emitEvent(EventPositionUpdate, propertyData)
-		} else {
-			p.emitEvent(EventStateChange, propertyData)
+	// Handle specific properties we care about
+	switch event.Name {
+	case "playback-time":
+		if pos, ok := event.Data.(float64); ok && pos >= 0 {
+			p.emitEvent(EventPositionUpdate, map[string]interface{}{
+				"position": pos,
+			})
+		}
+	case "duration":
+		if dur, ok := event.Data.(float64); ok && dur > 0 {
+			p.emitEvent(EventPositionUpdate, map[string]interface{}{
+				"duration": dur,
+			})
+		}
+	case "pause":
+		if paused, ok := event.Data.(bool); ok {
+			p.emitEvent(EventStateChange, map[string]interface{}{
+				"paused": paused,
+			})
 		}
 	}
 }

@@ -63,8 +63,11 @@ func (v *MainView) Render() string {
 	// Main content area
 	sections = append(sections, v.renderContent())
 
-	// Footer with playback controls
+	// Footer with key hints
 	sections = append(sections, v.renderFooter())
+
+	// Player controls section
+	sections = append(sections, v.renderPlayer())
 
 	// Log area at the bottom
 	sections = append(sections, v.renderLogArea())
@@ -118,9 +121,9 @@ func (v *MainView) renderContent() string {
 		height = 24
 	}
 
-    // Compute content height accounting for header (1), footer (1), log (1),
+    // Compute content height accounting for header (1), footer (1), player (3), log (1),
     // and content box overhead (border top/bottom + padding top/bottom = 4)
-    contentHeight := height - 7
+    contentHeight := height - 10
     contentWidth := width - 2
 	if contentWidth < 10 {
 		contentWidth = 10 // Minimum content width
@@ -258,6 +261,47 @@ func runeWidth(r rune) int {
 }
 
 func max(a, b int) int { if a > b { return a }; return b }
+
+// renderProgressBar creates a dynamic progress bar based on current position
+func (v *MainView) renderProgressBar() string {
+	if v.state.CurrentTrack == nil || v.state.CurrentTrack.Duration <= 0 {
+		return "[░░░░░░░░░░]"
+	}
+
+	// Calculate progress ratio
+	totalDuration := float64(v.state.CurrentTrack.Duration)
+	currentPosition := v.state.Position.Seconds()
+	
+	// Ensure position doesn't exceed duration
+	if currentPosition > totalDuration {
+		currentPosition = totalDuration
+	}
+	
+	progressRatio := currentPosition / totalDuration
+	
+	// Create progress bar with 10 segments
+	barWidth := 10
+	filledSegments := int(progressRatio * float64(barWidth))
+	
+	if filledSegments > barWidth {
+		filledSegments = barWidth
+	}
+	
+	// Build progress bar
+	var bar strings.Builder
+	bar.WriteString("[")
+	
+	for i := 0; i < barWidth; i++ {
+		if i < filledSegments {
+			bar.WriteString("▓")
+		} else {
+			bar.WriteString("░")
+		}
+	}
+	
+	bar.WriteString("]")
+	return bar.String()
+}
 
 // Tab-specific render functions
 func (v *MainView) renderHomeTab() string {
@@ -1010,10 +1054,10 @@ func (v *MainView) renderPlayer() string {
 		controls = append(controls, "🔀 Shuffle")
 	}
 
-	// Progress bar placeholder (for now, we'll show a simple indicator)
+	// Dynamic progress bar
 	if v.state.CurrentTrack.Duration > 0 {
-		// TODO: Add actual position tracking
-		controls = append(controls, "[▓▓▓▓░░░░░░]")
+		progressBar := v.renderProgressBar()
+		controls = append(controls, progressBar)
 	}
 
 	controlStr := strings.Join(controls, " | ")

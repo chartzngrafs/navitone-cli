@@ -139,8 +139,8 @@ func (a *App) updateAudioState(state *models.AppState) {
 		// Update shuffle state
 		a.state.IsShuffleMode = a.audioManager.IsShuffleEnabled()
 
-		// Update position if available
-		// TODO: Get position from audio manager if needed
+		// Update position from audio manager
+		a.state.Position = a.audioManager.GetPosition()
 	}
 }
 

@@ -98,6 +98,17 @@ func (m *Manager) Start() error {
 		m.logMessage(fmt.Sprintf("Failed to set initial volume: %v", err))
 	}
 
+	// Set up property observations for real-time updates
+	if err := m.commands.ObserveProperty(1, "playback-time"); err != nil {
+		m.logMessage(fmt.Sprintf("Failed to observe playback-time: %v", err))
+	}
+	if err := m.commands.ObserveProperty(2, "duration"); err != nil {
+		m.logMessage(fmt.Sprintf("Failed to observe duration: %v", err))
+	}
+	if err := m.commands.ObserveProperty(3, "pause"); err != nil {
+		m.logMessage(fmt.Sprintf("Failed to observe pause: %v", err))
+	}
+
 	// Start event processing loop
 	m.eventWg.Add(1)
 	go m.eventLoop()
