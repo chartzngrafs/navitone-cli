@@ -170,30 +170,30 @@ func (v *MainView) renderFooter() string {
 
 // footerHint composes global and context-specific key hints
 func (v *MainView) footerHint() string {
-    global := "Tab/Shift+Tab Switch • Shift+F Search • Shift+S Sort • Ctrl+C/q Quit"
+    global := "↑↓ Navigate • Tab Switch • Shift+S Sort • Shift+F Search • Shift+C Cava • q Quit"
 
     if v.state.ShowAlbumModal || v.state.ShowArtistModal || v.state.ShowPlaylistModal || v.state.ShowSearchModal || v.state.ShowSortModal {
-        return global + " • Esc close • Enter select"
+        return global + " | Esc close • Enter select"
     }
 
     var ctx string
     switch v.state.CurrentTab {
     case models.HomeTab:
-        ctx = "↑↓ Navigate • PgUp/PgDn Sections • Enter select • Shift+Enter queue • R Refresh"
+        ctx = "Enter select • Shift+Enter queue • R Refresh"
     case models.AlbumsTab:
-        ctx = "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter view tracks • A/Alt+Enter queue album • R Refresh • Shift+S Sort"
+        ctx = "Enter view • R Refresh • A queue"
     case models.ArtistsTab:
-        ctx = "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter view albums • R Refresh • Shift+S Sort"
+        ctx = "Enter view • R Refresh"
     case models.PlaylistsTab:
-        ctx = "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter view tracks • A/Alt+Enter queue • R Refresh • Shift+S Sort"
+        ctx = "Enter view • R Refresh • A queue"
     case models.QueueTab:
-        ctx = "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter/Space play • X/Del remove • C clear • Alt+←/→ prev/next • Shift+↑/↓ volume"
+        ctx = "Space play • Alt+←/→ skip • Shift+↑/↓ volume • X remove • C clear"
     case models.ConfigTab:
-        ctx = "↑↓ Move • Enter edit/toggle • F2 save • F3 test • Esc cancel"
+        ctx = "Enter edit • F2 save • F3 test"
     }
 
     if ctx != "" {
-        return global + " • " + ctx
+        return global + " | " + ctx
     }
     return global
 }

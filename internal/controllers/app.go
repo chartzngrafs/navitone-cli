@@ -12,6 +12,7 @@ import (
 	"navitone-cli/internal/audio"
 	"navitone-cli/internal/config"
 	"navitone-cli/internal/models"
+	"navitone-cli/internal/utils"
 	"navitone-cli/internal/views"
 	"navitone-cli/pkg/navidrome"
 	"navitone-cli/pkg/scrobbling"
@@ -511,6 +512,14 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case models.PlaylistsTab:
 				a.state.CurrentSortContext = "playlists"
 			}
+		}
+		return a, nil
+	case "shift+c", "C":
+		// Global: Shift+C - Launch Cava audio visualizer in new terminal
+		if err := utils.LaunchCavaInTerminal(); err != nil {
+			a.logMessage(fmt.Sprintf("Failed to launch Cava: %v", err))
+		} else {
+			a.logMessage("Launched Cava audio visualizer")
 		}
 		return a, nil
 	}

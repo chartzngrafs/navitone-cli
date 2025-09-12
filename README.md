@@ -13,6 +13,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **MPV-Powered Audio** - Professional audio playback with universal format support
 - **Smart Navigation** - Modal-based browsing with intuitive keybindings
 - **Queue Management** - Complete playback controls with smart queue management
+- **Audio Visualizer** - Integrated Cava support with Shift+C hotkey for new terminal launch
 - **Scrobbling Support** - Last.fm and ListenBrainz integration with offline queuing
 
 ## 🚀 Current Status
@@ -156,6 +157,7 @@ navitone-cli/
 
 - **Go 1.23+**
 - **MPV Media Player** - Install via your package manager (`sudo apt install mpv`, `brew install mpv`, etc.)
+- **Cava Audio Visualizer** - Install via your package manager (`sudo apt install cava`, `brew install cava`, etc.)
 - **Linux/macOS/Windows** - Cross-platform support via MPV
 - **Navidrome Server** (for music streaming)
 
@@ -185,6 +187,7 @@ The application will automatically download required Go dependencies:
 ### Basic Navigation
 - **Tab/Shift+Tab** - Switch between tabs
 - **Shift+F** - Enhanced global search with intelligent pagination and dual-mode playback
+- **Shift+C** - Launch Cava audio visualizer in new terminal window
 - **Ctrl+C or q** - Quit application
 
 ### First Run Setup
@@ -230,6 +233,7 @@ The application will automatically download required Go dependencies:
   - "MORE" pagination options for browsing additional results
   - Dual-mode playback: Enter (play + queue remaining) vs Shift+Enter (queue only)
   - Real-time search with organized, categorized results
+- **Audio Visualizer**: Shift+C launches Cava in new terminal window with cross-platform support
 - **Volume Control**: Shift+Up/Down for volume adjustment
 - **Seeking**: Left/Right arrow keys for 10-second scrubbing
 - **Multi-format Support**: FLAC, MP3, OGG, WAV streaming with real-time playback
