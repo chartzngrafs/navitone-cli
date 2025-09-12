@@ -196,8 +196,15 @@ type User struct {
 
 // UserResponse represents the response from getUser
 type UserResponse struct {
-	SubsonicResponse struct {
-		BaseResponse
-		User User `json:"user"`
-	} `json:"subsonic-response"`
+    SubsonicResponse struct {
+        BaseResponse
+        User User `json:"user"`
+    } `json:"subsonic-response"`
+}
+
+// ScrobblingCapabilities represents server-side scrobbling availability and user status
+type ScrobblingCapabilities struct {
+    ServerScrobblingAvailable bool
+    UserScrobblingEnabled     bool
+    SupportedServices         []string
 }

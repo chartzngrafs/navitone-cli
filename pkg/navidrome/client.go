@@ -575,6 +575,27 @@ func (c *Client) Search(ctx context.Context, query string, artistCount, albumCou
 	return &searchResp, nil
 }
 
+// GetScrobblingCapabilities checks server/user scrobbling status.
+// Note: Navidrome does not expose explicit server scrobbling configuration via API;
+// we infer availability from the presence of the endpoint and user flags.
+func (c *Client) GetScrobblingCapabilities(ctx context.Context) (*ScrobblingCapabilities, error) {
+    caps := &ScrobblingCapabilities{
+        // Assume endpoint exists on Navidrome (Subsonic-compatible)
+        ServerScrobblingAvailable: true,
+        SupportedServices:         []string{},
+    }
+
+    // Check user profile for scrobblingEnabled flag
+    userResp, err := c.GetUser(ctx, c.username)
+    if err != nil {
+        // Return partial info; caller may still attempt and fallback
+        return caps, nil
+    }
+
+    caps.UserScrobblingEnabled = userResp.SubsonicResponse.User.ScrobblingEnabled
+    return caps, nil
+}
+
 // Scrobble submits a scrobble to the server
 func (c *Client) Scrobble(ctx context.Context, songID string, submission bool) error {
 	params := url.Values{}

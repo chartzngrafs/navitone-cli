@@ -773,34 +773,46 @@ func (v *MainView) formatQueueLine(track models.Track, index int, selected bool)
 }
 
 func (v *MainView) renderConfigTab() string {
-	cf := v.state.ConfigForm
-	if cf == nil {
-		return "Configuration not loaded"
-	}
+    cf := v.state.ConfigForm
+    if cf == nil {
+        return "Configuration not loaded"
+    }
 
-	var sections []string
+    var sections []string
 
-	// Header
-	sections = append(sections, "⚙️  Configuration")
-	sections = append(sections, "")
+    // Header
+    sections = append(sections, "⚙️  Configuration")
+    sections = append(sections, "")
 
-	// Navidrome section
-	sections = append(sections, v.renderConfigSection("Navidrome Server Settings", []models.ConfigFormField{
-		models.ServerURLField,
-		models.UsernameField,
-		models.PasswordField,
-	}, cf))
+    // Navidrome section
+    sections = append(sections, v.renderConfigSection("Navidrome Server Settings", []models.ConfigFormField{
+        models.ServerURLField,
+        models.UsernameField,
+        models.PasswordField,
+    }, cf))
 
-	sections = append(sections, "")
+    sections = append(sections, "")
 
-	// Scrobbling section
-	sections = append(sections, v.renderConfigSection("Scrobbling Settings", []models.ConfigFormField{
-		models.LastFMEnabledField,
-		models.LastFMUsernameField,
-		models.LastFMPasswordField,
-		models.ListenBrainzEnabledField,
-		models.ListenBrainzTokenField,
-	}, cf))
+    // Server scrobbling status (display above scrobbling settings)
+    if cf.ServerScrobblingDetected {
+        if cf.ServerScrobblingEnabled {
+            sections = append(sections, "✅ Server Scrobbling Enabled (configured in Navidrome)")
+        } else {
+            sections = append(sections, "❌ Server Scrobbling Disabled (configure in Navidrome)")
+        }
+    } else {
+        sections = append(sections, "ℹ️  Server Scrobbling status unavailable")
+    }
+    sections = append(sections, "")
+
+    // Scrobbling section
+    sections = append(sections, v.renderConfigSection("Scrobbling Settings", []models.ConfigFormField{
+        models.LastFMEnabledField,
+        models.LastFMUsernameField,
+        models.LastFMPasswordField,
+        models.ListenBrainzEnabledField,
+        models.ListenBrainzTokenField,
+    }, cf))
 
 	sections = append(sections, "")
 

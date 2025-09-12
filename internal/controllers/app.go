@@ -87,11 +87,17 @@ func NewApp() *App {
 		view:  views.NewMainView(state, cfg.UI.Theme),
 	}
 
-	// Initialize Navidrome client if config is valid
-	app.initializeNavidromeClient()
+    // Initialize Navidrome client if config is valid
+    app.initializeNavidromeClient()
 
-	// Initialize scrobbling manager
-	app.scrobbler = scrobbling.NewManager(cfg)
+    // Initialize scrobbling manager
+    app.scrobbler = scrobbling.NewManager(cfg)
+    if app.navidromeClient != nil {
+        app.scrobbler.AttachNavidromeClient(app.navidromeClient)
+    }
+
+    // Detect server scrobbling capability
+    app.updateServerScrobbleStatus()
 
 	// Initialize audio manager
 	if app.navidromeClient != nil {
@@ -183,10 +189,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cf.TestingConnection = false
 		cf.ConnectionStatus = msg.Message
 		// Reinitialize client if connection was successful
-		if msg.Success {
-			a.initializeNavidromeClient()
-		}
-		return a, nil
+        if msg.Success {
+            a.initializeNavidromeClient()
+            if a.scrobbler != nil && a.navidromeClient != nil {
+                a.scrobbler.AttachNavidromeClient(a.navidromeClient)
+            }
+            // Refresh server scrobble status after reconnection
+            a.updateServerScrobbleStatus()
+        }
+        return a, nil
 	case AlbumsLoadResult:
 		// Handle albums load result
 		a.state.LoadingAlbums = false
@@ -792,10 +803,30 @@ func (a *App) initializeNavidromeClient() {
 	}
 }
 
+// updateServerScrobbleStatus checks Navidrome for server-side scrobbling status
+func (a *App) updateServerScrobbleStatus() {
+    if a.navidromeClient == nil || a.state == nil || a.state.ConfigForm == nil {
+        return
+    }
+
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    caps, err := a.navidromeClient.GetScrobblingCapabilities(ctx)
+    if err != nil || caps == nil {
+        a.state.ConfigForm.ServerScrobblingDetected = false
+        a.state.ConfigForm.ServerScrobblingEnabled = false
+        return
+    }
+
+    a.state.ConfigForm.ServerScrobblingDetected = true
+    a.state.ConfigForm.ServerScrobblingEnabled = caps.UserScrobblingEnabled
+}
+
 // handleTabChange handles actions when switching tabs
 func (a *App) handleTabChange() tea.Cmd {
-	// Load data when entering certain tabs
-	switch a.state.CurrentTab {
+    // Load data when entering certain tabs
+    switch a.state.CurrentTab {
 	case models.HomeTab:
 		if a.navidromeClient != nil && !a.state.LoadingHomeData {
 			// Load home data if we don't have any or if it's been a while
@@ -811,12 +842,15 @@ func (a *App) handleTabChange() tea.Cmd {
 		if len(a.state.Artists) == 0 && a.navidromeClient != nil && !a.state.LoadingArtists {
 			return a.loadArtists()
 		}
-	case models.PlaylistsTab:
-		if len(a.state.Playlists) == 0 && a.navidromeClient != nil && !a.state.LoadingPlaylists {
-			return a.loadPlaylists()
-		}
-	}
-	return nil
+    case models.PlaylistsTab:
+        if len(a.state.Playlists) == 0 && a.navidromeClient != nil && !a.state.LoadingPlaylists {
+            return a.loadPlaylists()
+        }
+    case models.ConfigTab:
+        // Refresh server scrobbling status on entering Config tab
+        a.updateServerScrobbleStatus()
+    }
+    return nil
 }
 
 // handleHomeKeyPress handles keyboard input for the home tab

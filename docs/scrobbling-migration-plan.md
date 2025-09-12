@@ -1,5 +1,10 @@
 # Scrobbling Migration Plan: Server-Side First Approach
 
+Status (Current)
+- Server detection implemented: Config tab displays “Server Scrobbling Enabled/Disabled” based on Navidrome user profile.
+- Hybrid routing implemented: Now Playing and completed scrobbles route to server (`/rest/scrobble`) with auto-fallback to client (Last.fm/ListenBrainz) when configured.
+- Config method exists in `config.toml` (`scrobbling.method`), default `auto`; no UI method selector (per UX decision).
+
 ## Overview
 Migrate from client-side scrobbling configuration to Navidrome's native server-side scrobbling, similar to how Feishin and other clients handle it. This eliminates the need for users to configure Last.fm API keys and ListenBrainz tokens directly in the client.
 
@@ -22,15 +27,17 @@ Migrate from client-side scrobbling configuration to Navidrome's native server-s
 **Goal**: Detect and display server-side scrobbling availability
 
 **Implementation**:
-1. Add method to check user's `ScrobblingEnabled` field during auth
-2. Query server capabilities for scrobbling configuration status
-3. Update Config tab UI to show server scrobbling status
-4. Display guidance message for users based on server capabilities
+1. Add method to check user's `ScrobblingEnabled` field during auth [DONE]
+2. Query server capabilities for scrobbling configuration status [DONE]
+3. Update Config tab UI to show server scrobbling status [DONE]
+4. Display guidance message for users based on server capabilities [DONE]
 
-**Files to Modify**:
-- `internal/api/navidrome/client.go` - Add capability detection
-- `internal/models/config_form.go` - Update UI to show server status
-- `internal/controllers/config.go` - Add server status checks
+**Files Implemented**:
+- `pkg/navidrome/client.go` - `GetScrobblingCapabilities(ctx)`
+- `pkg/navidrome/types.go` - `ScrobblingCapabilities` struct
+- `internal/models/config_form.go` - detection flags on form state
+- `internal/controllers/app.go` - detection wiring and refresh
+- `internal/views/main.go` - status line in Config tab
 
 ### Phase 2: Hybrid Scrobbling System
 **Goal**: Support both server-side and client-side scrobbling with user choice
@@ -60,17 +67,17 @@ token = ""
 - **Disabled**: No scrobbling
 
 **Implementation**:
-1. Add method selection to scrobbling manager
-2. Implement server-side scrobbling route using existing `Client.Scrobble()`
-3. Update routing logic in audio managers
-4. Add fallback handling for server unavailability
+1. Add method support in scrobbling manager [DONE]
+2. Implement server-side scrobbling route using existing `Client.Scrobble()` [DONE]
+3. Update routing logic in audio managers [DONE]
+4. Add fallback handling for server unavailability [DONE]
 
-**Files to Modify**:
-- `pkg/scrobbling/manager.go` - Add method routing logic
-- `pkg/scrobbling/types.go` - Add method enum and server capabilities
-- `internal/config/config.go` - Update config structure
-- `internal/audio/mpv/manager.go` - Update scrobbling calls
-- `internal/models/config_form.go` - Add method selection UI
+**Files Implemented**:
+- `pkg/scrobbling/manager.go` - method routing (`NowPlaying`, `SubmitScrobble`) and fallback
+- `pkg/scrobbling/types.go` - method enum
+- `internal/config/config.go` - config structure updated with `scrobbling.method`
+- `internal/audio/mpv/manager.go` - use new routing for Now Playing and scrobble
+- UI method selector intentionally omitted; we only display server status in Config tab
 
 ### Phase 3: Enhanced User Experience
 **Goal**: Streamline setup process for most users
@@ -81,11 +88,9 @@ token = ""
 3. **Status Indicators**: Clear feedback on scrobbling state
 4. **Connection Testing**: Test both server and client-side scrobbling
 
-**UI Enhancements**:
-- Show "✅ Server scrobbling available" or "❌ Server scrobbling not configured"
-- Hide complex API key fields when server-side is available and preferred
-- Add "Test Scrobbling" button for both methods
-- Provide setup instructions based on chosen method
+**UI Enhancements (Current)**:
+- Show "✅ Server scrobbling enabled" or "❌ Server scrobbling disabled" above scrobbling settings [DONE]
+- No method selector or test button (by design)
 
 ## Implementation Details
 

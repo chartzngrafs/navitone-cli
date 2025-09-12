@@ -24,13 +24,16 @@ const (
 
 // ConfigFormState represents the state of the configuration form
 type ConfigFormState struct {
-	Config          *config.Config
-	ActiveField     ConfigFormField
-	EditMode        bool
-	CurrentInput    string
-	ValidationError string
-	TestingConnection bool
-	ConnectionStatus  string
+    Config          *config.Config
+    ActiveField     ConfigFormField
+    EditMode        bool
+    CurrentInput    string
+    ValidationError string
+    TestingConnection bool
+    ConnectionStatus  string
+    // Server scrobbling capability status
+    ServerScrobblingDetected bool
+    ServerScrobblingEnabled  bool
 }
 
 // NewConfigFormState creates a new config form state

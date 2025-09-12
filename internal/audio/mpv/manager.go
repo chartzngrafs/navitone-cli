@@ -509,16 +509,16 @@ func (m *Manager) playTrackAtIndexLocked(index int) error {
 	m.logMessage(fmt.Sprintf("Playing track: %s - %s", track.Artist, track.Title))
 	m.notifyStateChange()
 
-	// Submit "Now Playing" to scrobbling services
-	if m.scrobbler != nil {
-		scrobbleTrack := scrobbling.ScrobbleTrack{
-			Title:    track.Title,
-			Artist:   track.Artist,
-			Album:    track.Album,
-			Duration: track.Duration,
-		}
-		go m.scrobbler.UpdateNowPlaying(scrobbleTrack)
-	}
+    // Submit "Now Playing" (routes to server/client based on method)
+    if m.scrobbler != nil {
+        scrobbleTrack := scrobbling.ScrobbleTrack{
+            Title:    track.Title,
+            Artist:   track.Artist,
+            Album:    track.Album,
+            Duration: track.Duration,
+        }
+        go m.scrobbler.NowPlaying(track.ID, scrobbleTrack)
+    }
 
 	return nil
 }
@@ -614,6 +614,22 @@ func (m *Manager) handlePlaybackEvent(event PlaybackEvent) {
 
 	case EventTrackFinished:
 		m.logMessage("Track finished")
+		
+        // Submit scrobble for completed track (routes to server/client)
+        if m.scrobbler != nil && m.currentIndex >= 0 && m.currentIndex < len(m.queue) {
+            track := m.queue[m.currentIndex]
+            scrobbleTrack := scrobbling.ScrobbleTrack{
+                Title:       track.Title,
+                Artist:      track.Artist,
+                Album:       track.Album,
+                Duration:    track.Duration,
+                TrackNumber: track.Track,
+                Timestamp:   time.Now().Unix(),
+            }
+            m.logMessage(fmt.Sprintf("Scrobbling completed track: %s - %s", track.Artist, track.Title))
+            go m.scrobbler.SubmitScrobble(track.ID, scrobbleTrack)
+        }
+		
 		// Auto-advance to next track
 		go func() {
 			time.Sleep(100 * time.Millisecond) // Brief delay

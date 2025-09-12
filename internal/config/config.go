@@ -40,8 +40,10 @@ type UIConfig struct {
 
 // ScrobblingConfig contains scrobbling service settings
 type ScrobblingConfig struct {
-	LastFM       LastFMConfig       `toml:"lastfm"`
-	ListenBrainz ListenBrainzConfig `toml:"listenbrainz"`
+    // Method selects how scrobbling is performed: "auto", "server", "client", or "disabled"
+    Method       string             `toml:"method"`
+    LastFM       LastFMConfig       `toml:"lastfm"`
+    ListenBrainz ListenBrainzConfig `toml:"listenbrainz"`
 }
 
 // LastFMConfig contains Last.fm scrobbling settings
@@ -61,7 +63,7 @@ type ListenBrainzConfig struct {
 
 // DefaultConfig returns a configuration with default values
 func DefaultConfig() *Config {
-	return &Config{
+    return &Config{
 		Navidrome: NavidromeConfig{
 			ServerURL: "",
 			Username:  "",
@@ -92,20 +94,21 @@ func DefaultConfig() *Config {
 				"stop": "ctrl+s",
 			},
 		},
-		Scrobbling: ScrobblingConfig{
-			LastFM: LastFMConfig{
-				Enabled:  false,
-				Username: "",
-				Password: "",
-				APIKey:   "", // Users need to get their own API key
-				Secret:   "", // Users need to get their own secret
-			},
-			ListenBrainz: ListenBrainzConfig{
-				Enabled: false,
-				Token:   "",
-			},
-		},
-	}
+        Scrobbling: ScrobblingConfig{
+            Method: "auto",
+            LastFM: LastFMConfig{
+                Enabled:  false,
+                Username: "",
+                Password: "",
+                APIKey:   "", // Users need to get their own API key
+                Secret:   "", // Users need to get their own secret
+            },
+            ListenBrainz: ListenBrainzConfig{
+                Enabled: false,
+                Token:   "",
+            },
+        },
+    }
 }
 
 // GetConfigPath returns the path to the configuration file

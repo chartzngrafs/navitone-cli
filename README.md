@@ -30,7 +30,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Modal System** - Seamless navigation flow with context-aware controls across Albums, Artists, and Playlists
 - **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
 - **Enhanced Global Search** - Shift+F modal search with intelligent result limiting, pagination, and dual-mode playback
-- **Scrobbling System** - Full Last.fm and ListenBrainz support with Now Playing updates
+- **Scrobbling System** - Server-side scrobbling via Navidrome (preferred) with optional client-side Last.fm/ListenBrainz and Now Playing updates
 - **Process Management** - Proper MPV lifecycle with graceful shutdown and cleanup
 
 ### 🏗️ In Development
@@ -187,7 +187,7 @@ The application will automatically download required Go dependencies:
 2. Navigate to the **Config** tab (rightmost tab)
 3. Use ↑↓ arrows to navigate fields, Enter to edit
 4. Enter your Navidrome server details
-5. Configure scrobbling services (optional - toggle checkboxes with Enter)
+5. Scrobbling: If your Navidrome admin linked Last.fm/ListenBrainz, server-side scrobbling works automatically. The Config tab shows a status line. Client-side setup is optional.
 6. Press F2 to save settings
 7. Press F3 to test Navidrome connection
 
@@ -248,11 +248,15 @@ volume = 100
 device = \"\"  # Auto-detect
 buffer_size = 4096
 
+[scrobbling]
+# Select scrobbling method: "auto", "server", "client", or "disabled"
+method = \"auto\"
+
 [scrobbling.lastfm]
 enabled = false
 username = \"\"
 password = \"\"
-api_key = \"\"
+api_key = \"\" 
 secret = \"\"
 
 [scrobbling.listenbrainz]
@@ -264,6 +268,10 @@ theme = \"dark\"
 show_album_art = false
 home_album_count = 8
 ```
+
+Notes:
+- When `method = "auto"` (default), Navitone uses server-side scrobbling if available for your user on Navidrome, and falls back to client-side if not configured or fails.
+- The Config tab displays a status line: “Server Scrobbling Enabled/Disabled” based on your Navidrome user profile.
 
 ## 🧪 Development
 
@@ -321,19 +329,18 @@ go build -o bin/navitone ./cmd/navitone
 - [ ] Performance optimizations
 - [ ] Plugin system
 
-## 🤝 Scrobbling Services
+## 🤝 Scrobbling
 
-### Last.fm Setup
-1. Create a Last.fm API application
-2. Get your API key and secret
-3. Enter credentials in Config tab
-4. Enable scrobbling
+### Recommended: Server-side via Navidrome
+- Ask your Navidrome admin to configure Last.fm and/or ListenBrainz integrations on the server and link your account in the Navidrome web UI.
+- Navitone will detect this and scrobble via the server automatically. No client setup needed.
 
-### ListenBrainz Setup  
-1. Create a ListenBrainz account
-2. Generate a user token
-3. Enter token in Config tab
-4. Enable scrobbling
+### Optional: Client-side services
+If the server isn’t configured or you prefer client-side:
+- Last.fm: Create an API application, obtain API key and secret, and enter them along with your username/password in the Config tab; enable the checkbox.
+- ListenBrainz: Generate a user token and enter it in the Config tab; enable the checkbox.
+
+Tip: Leave `scrobbling.method = "auto"` to try server first, fallback to client.
 
 ## 📝 License
 

@@ -1,36 +1,47 @@
 package scrobbling
 
 import (
-	"context"
-	"fmt"
-	"log"
-	"sync"
-	"time"
+    "context"
+    "fmt"
+    "log"
+    "sync"
+    "time"
 
-	"navitone-cli/internal/config"
+    "navitone-cli/internal/config"
+    "navitone-cli/pkg/navidrome"
 )
 
 // Manager handles scrobbling to multiple services
 type Manager struct {
-	config         *config.Config
-	lastfm         *LastFMClient
-	listenbrainz   *ListenBrainzClient
-	queuedScrobbles []QueuedScrobble
-	mutex          sync.RWMutex
-	ctx            context.Context
-	cancel         context.CancelFunc
+    config         *config.Config
+    lastfm         *LastFMClient
+    listenbrainz   *ListenBrainzClient
+    queuedScrobbles []QueuedScrobble
+    mutex          sync.RWMutex
+    ctx            context.Context
+    cancel         context.CancelFunc
+    method         ScrobblingMethod
+    navidromeClient *navidrome.Client
 }
 
 // NewManager creates a new scrobbling manager
 func NewManager(cfg *config.Config) *Manager {
-	ctx, cancel := context.WithCancel(context.Background())
-	
-	manager := &Manager{
-		config:          cfg,
-		queuedScrobbles: make([]QueuedScrobble, 0),
-		ctx:             ctx,
-		cancel:          cancel,
-	}
+    ctx, cancel := context.WithCancel(context.Background())
+    
+    manager := &Manager{
+        config:          cfg,
+        queuedScrobbles: make([]QueuedScrobble, 0),
+        ctx:             ctx,
+        cancel:          cancel,
+    }
+
+    // Determine method from config, default to auto
+    switch ScrobblingMethod(cfg.Scrobbling.Method) {
+    case MethodServer, MethodClient, MethodDisabled, MethodAuto:
+        manager.method = ScrobblingMethod(cfg.Scrobbling.Method)
+    default:
+        manager.method = MethodAuto
+    }
 
 	// Initialize clients if enabled
 	if cfg.Scrobbling.LastFM.Enabled {
@@ -46,10 +57,17 @@ func NewManager(cfg *config.Config) *Manager {
 		manager.listenbrainz = NewListenBrainzClient(cfg.Scrobbling.ListenBrainz.Token)
 	}
 
-	// Start retry worker
-	go manager.retryWorker()
+    // Start retry worker
+    go manager.retryWorker()
 
-	return manager
+    return manager
+}
+
+// AttachNavidromeClient allows server-side scrobbling via Navidrome
+func (m *Manager) AttachNavidromeClient(c *navidrome.Client) {
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
+    m.navidromeClient = c
 }
 
 // Close shuts down the scrobbling manager
@@ -59,8 +77,9 @@ func (m *Manager) Close() {
 
 // Scrobble submits a scrobble to all enabled services
 func (m *Manager) Scrobble(track ScrobbleTrack) []ScrobbleResult {
-	var results []ScrobbleResult
-	var wg sync.WaitGroup
+    // Client-side scrobbling only; server routing handled by SubmitScrobble
+    var results []ScrobbleResult
+    var wg sync.WaitGroup
 
 	resultsChan := make(chan ScrobbleResult, 2)
 
@@ -104,8 +123,9 @@ func (m *Manager) Scrobble(track ScrobbleTrack) []ScrobbleResult {
 
 // UpdateNowPlaying updates now playing status on all enabled services
 func (m *Manager) UpdateNowPlaying(track ScrobbleTrack) []ScrobbleResult {
-	var results []ScrobbleResult
-	var wg sync.WaitGroup
+    // Client-side now playing only; server routing handled by NowPlaying
+    var results []ScrobbleResult
+    var wg sync.WaitGroup
 
 	resultsChan := make(chan ScrobbleResult, 2)
 
@@ -140,6 +160,86 @@ func (m *Manager) UpdateNowPlaying(track ScrobbleTrack) []ScrobbleResult {
 	}
 
 	return results
+}
+
+// NowPlaying routes now playing to server or client services based on method
+func (m *Manager) NowPlaying(songID string, track ScrobbleTrack) []ScrobbleResult {
+    m.mutex.RLock()
+    method := m.method
+    client := m.navidromeClient
+    m.mutex.RUnlock()
+
+    // Disabled -> no-op
+    if method == MethodDisabled {
+        return nil
+    }
+
+    // If server selected (or auto with client available), try server first
+    if (method == MethodServer || method == MethodAuto) && client != nil && songID != "" {
+        ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
+        defer cancel()
+        err := client.Scrobble(ctx, songID, false)
+        if err == nil {
+            return []ScrobbleResult{{
+                Service:   "Navidrome (Server) - Now Playing",
+                Success:   true,
+                Track:     track,
+                Timestamp: time.Now().Unix(),
+            }}
+        }
+        // Auto: fallback to client on server failure
+        if method != MethodAuto {
+            return []ScrobbleResult{{
+                Service:   "Navidrome (Server) - Now Playing",
+                Success:   false,
+                Error:     err,
+                Track:     track,
+                Timestamp: time.Now().Unix(),
+            }}
+        }
+        // else fallback below
+    }
+
+    // Client path
+    return m.UpdateNowPlaying(track)
+}
+
+// SubmitScrobble routes completed scrobble to server or client services based on method
+func (m *Manager) SubmitScrobble(songID string, track ScrobbleTrack) []ScrobbleResult {
+    m.mutex.RLock()
+    method := m.method
+    client := m.navidromeClient
+    m.mutex.RUnlock()
+
+    if method == MethodDisabled {
+        return nil
+    }
+
+    if (method == MethodServer || method == MethodAuto) && client != nil && songID != "" {
+        ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
+        defer cancel()
+        err := client.Scrobble(ctx, songID, true)
+        if err == nil {
+            return []ScrobbleResult{{
+                Service:   "Navidrome (Server)",
+                Success:   true,
+                Track:     track,
+                Timestamp: time.Now().Unix(),
+            }}
+        }
+        if method != MethodAuto {
+            return []ScrobbleResult{{
+                Service:   "Navidrome (Server)",
+                Success:   false,
+                Error:     err,
+                Track:     track,
+                Timestamp: time.Now().Unix(),
+            }}
+        }
+        // Fallback to client if auto
+    }
+
+    return m.Scrobble(track)
 }
 
 // scrobbleLastFM handles Last.fm scrobbling

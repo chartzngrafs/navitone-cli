@@ -11,9 +11,19 @@ type ScrobbleTrack struct {
 	MBID        string // MusicBrainz ID (optional)
 }
 
+// ScrobblingMethod selects how scrobbling should be performed
+type ScrobblingMethod string
+
+const (
+    MethodAuto     ScrobblingMethod = "auto"
+    MethodServer   ScrobblingMethod = "server"
+    MethodClient   ScrobblingMethod = "client"
+    MethodDisabled ScrobblingMethod = "disabled"
+)
+
 // UserInfo represents user information from Last.fm
 type UserInfo struct {
-	Name         string `json:"name"`
+    Name         string `json:"name"`
 	RealName     string `json:"realname"`
 	Country      string `json:"country"`
 	PlayCount    int    `json:"playcount,string"`
