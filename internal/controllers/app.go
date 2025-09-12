@@ -1190,16 +1190,40 @@ func (a *App) loadArtists() tea.Cmd {
 			return ArtistsLoadResult{Error: err}
 		}
 
-		// Convert Navidrome artists to our model
+		// Convert Navidrome artists to our model and calculate play counts
+		artistPlayCounts := make(map[string]int)
 		var artists []models.Artist
+		
+		// First, collect all artists
 		for _, index := range resp.SubsonicResponse.Artists.Index {
 			for _, artist := range index.Artist {
 				artists = append(artists, models.Artist{
 					ID:         artist.ID,
 					Name:       artist.Name,
 					AlbumCount: artist.AlbumCount,
+					PlayCount:  0, // Will be calculated below
 					StarredAt:  artist.Starred,
 				})
+				artistPlayCounts[artist.ID] = 0
+			}
+		}
+		
+		// Get all albums to aggregate play counts per artist
+		// Use alphabeticalByName to get ALL albums, not just frequent ones
+		allAlbumsResp, err := a.navidromeClient.GetAlbumsByType(ctx, "alphabeticalByName", 1000, 0)
+		if err == nil {
+			// Aggregate play counts for each artist from their albums
+			for _, album := range allAlbumsResp.SubsonicResponse.AlbumList2.Album {
+				if count, exists := artistPlayCounts[album.ArtistID]; exists {
+					artistPlayCounts[album.ArtistID] = count + album.PlayCount
+				}
+			}
+		}
+		
+		// Update artists with aggregated play counts
+		for i := range artists {
+			if count, exists := artistPlayCounts[artists[i].ID]; exists {
+				artists[i].PlayCount = count
 			}
 		}
 
@@ -2627,7 +2651,8 @@ func (a *App) sortAlbumsAsync(sortBy string) tea.Cmd {
 		case "date_added":
 			albumType = "newest"
 		case "play_count":
-			albumType = "frequent"
+			// Play count sorting filters to only played albums using "frequent", so use in-memory sorting instead
+			return AlbumsSortResult{SortBy: sortBy, UseInMemorySort: true}
 		case "year":
 			// Year sorting not directly supported by API, fallback to in-memory
 			return AlbumsSortResult{SortBy: sortBy, UseInMemorySort: true}
@@ -2680,6 +2705,16 @@ func (a *App) sortAlbumsInMemory(sortBy string) {
 		for i := 0; i < len(albums)-1; i++ {
 			for j := 0; j < len(albums)-i-1; j++ {
 				if albums[j].Year < albums[j+1].Year {
+					albums[j], albums[j+1] = albums[j+1], albums[j]
+				}
+			}
+		}
+	case "play_count":
+		// Sort by play count (descending - most played first)
+		// This includes albums with 0 play count, unlike API "frequent" sort
+		for i := 0; i < len(albums)-1; i++ {
+			for j := 0; j < len(albums)-i-1; j++ {
+				if albums[j].PlayCount < albums[j+1].PlayCount {
 					albums[j], albums[j+1] = albums[j+1], albums[j]
 				}
 			}

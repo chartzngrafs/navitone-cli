@@ -622,7 +622,11 @@ func (v *MainView) formatAlbumLine(album models.Album, selected bool) string {
     yearStr := ""
     if album.Year > 0 { yearStr = fmt.Sprintf("[%d] ", album.Year) }
     left := fmt.Sprintf("%s%s - %s", yearStr, album.Artist, album.Name)
-    right := fmt.Sprintf("%d tracks", album.TrackCount)
+    
+    // Format with play count: "X tracks (Y plays)"
+    unit := "track"; if album.TrackCount != 1 { unit = "tracks" }
+    right := fmt.Sprintf("%2d %s (%4d plays)", album.TrackCount, unit, album.PlayCount)
+    
     return v.formatRow(left, right, selected, "")
 }
 
@@ -688,7 +692,10 @@ func (v *MainView) formatArtistLine(artist models.Artist, selected bool) string 
     star := ""
     if artist.StarredAt != nil { star = "★ " }
     left := star + artist.Name
-    right := fmt.Sprintf("%d %s", artist.AlbumCount, unit)
+    
+    // Format with play count: "X albums (Y plays)"
+    right := fmt.Sprintf("%2d %s (%4d plays)", artist.AlbumCount, unit, artist.PlayCount)
+    
     return v.formatRow(left, right, selected, "")
 }
 
