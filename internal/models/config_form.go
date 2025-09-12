@@ -85,23 +85,27 @@ func (cfs *ConfigFormState) GetFieldValue(field ConfigFormField) string {
 
 // GetFieldLabel returns the label for a form field
 func (cfs *ConfigFormState) GetFieldLabel(field ConfigFormField) string {
-	switch field {
-	case ServerURLField:
-		return "Server URL"
-	case UsernameField:
-		return "Username"
-	case PasswordField:
-		return "Password"
-	case LastFMUsernameField:
-		return "Last.fm Username"
-	case LastFMPasswordField:
-		return "Last.fm Password"
-	case ListenBrainzTokenField:
-		return "ListenBrainz Token"
-	case VolumeField:
-		return "Volume"
-	case AudioDeviceField:
-		return "Audio Device"
+    switch field {
+    case ServerURLField:
+        return "Server URL"
+    case UsernameField:
+        return "Username"
+    case PasswordField:
+        return "Password"
+    case LastFMEnabledField:
+        return "Enable Last.fm"
+    case LastFMUsernameField:
+        return "Last.fm Username"
+    case LastFMPasswordField:
+        return "Last.fm Password"
+    case ListenBrainzEnabledField:
+        return "Enable ListenBrainz"
+    case ListenBrainzTokenField:
+        return "ListenBrainz Token"
+    case VolumeField:
+        return "Volume"
+    case AudioDeviceField:
+        return "Audio Device"
 	case BufferSizeField:
 		return "Buffer Size"
 	default:

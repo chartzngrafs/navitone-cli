@@ -1,11 +1,12 @@
 package views
 
 import (
-	"fmt"
-	"strings"
+    "fmt"
+    "strings"
+    "unicode/utf8"
 
-	"github.com/charmbracelet/lipgloss"
-	"navitone-cli/internal/models"
+    "github.com/charmbracelet/lipgloss"
+    "navitone-cli/internal/models"
 )
 
 // MainView handles the main application view
@@ -18,17 +19,17 @@ type MainView struct {
 }
 
 // NewMainView creates a new main view
-func NewMainView(state *models.AppState, themeVariant string) *MainView {
-	theme := NewTheme(themeVariant)
-	styles := NewThemedStyles(theme)
+func NewMainView(state *models.AppState, themeVariant string, accentIndex int) *MainView {
+    theme := NewTheme(themeVariant, accentIndex)
+    styles := NewThemedStyles(theme)
 
-	return &MainView{
-		state:  state,
-		theme:  theme,
-		styles: styles,
-		width:  80, // Default width
-		height: 24, // Default height
-	}
+    return &MainView{
+        state:  state,
+        theme:  theme,
+        styles: styles,
+        width:  80, // Default width
+        height: 24, // Default height
+    }
 }
 
 // SetSize updates the view dimensions
@@ -92,26 +93,17 @@ func (v *MainView) Render() string {
 
 // renderHeader creates the header with tab navigation
 func (v *MainView) renderHeader() string {
-
-	var tabs []string
-
-	for i := models.HomeTab; i <= models.ConfigTab; i++ {
-		style := v.styles.TabInactive
-		if i == v.state.CurrentTab {
-			style = v.styles.TabActive
-		}
-		tabs = append(tabs, style.Render(i.String()))
-	}
-
-	tabBar := strings.Join(tabs, "")
-
-	// Ensure header has a valid width
-	headerWidth := v.width
-	if headerWidth <= 0 {
-		headerWidth = 80 // Fallback width
-	}
-
-	return v.styles.Header.Width(headerWidth).Render(tabBar)
+    // Single-line pill-style tabs within a highlighted header bar
+    var tabs []string
+    for i := models.HomeTab; i <= models.ConfigTab; i++ {
+        style := v.styles.TabInactive
+        if i == v.state.CurrentTab { style = v.styles.TabActive }
+        tabs = append(tabs, style.Render(i.String()))
+    }
+    pills := strings.Join(tabs, "")
+    headerWidth := v.width
+    if headerWidth <= 0 { headerWidth = 80 }
+    return v.styles.Header.Width(headerWidth).Render(pills)
 }
 
 // renderContent creates the main content area based on current tab
@@ -126,8 +118,10 @@ func (v *MainView) renderContent() string {
 		height = 24
 	}
 
-	contentHeight := height - 6 // Account for header, footer, and log area
-	contentWidth := width - 2
+    // Compute content height accounting for header (1), footer (1), log (1),
+    // and content box overhead (border top/bottom + padding top/bottom = 4)
+    contentHeight := height - 7
+    contentWidth := width - 2
 	if contentWidth < 10 {
 		contentWidth = 10 // Minimum content width
 	}
@@ -159,8 +153,8 @@ func (v *MainView) renderContent() string {
 
 // renderFooter creates a simple footer with basic info (player module handles playback details)
 func (v *MainView) renderFooter() string {
-	// Simple footer with just navigation hints since player module handles playback
-	footer := "Tab/Shift+Tab: Switch tabs | Shift+F: Global Search | Shift+S: Sort | Ctrl+C/q: Quit"
+    // Context-aware footer with concise key hints
+    footer := v.footerHint()
 
 	// Ensure footer has a valid width
 	footerWidth := v.width
@@ -170,6 +164,100 @@ func (v *MainView) renderFooter() string {
 
 	return v.styles.Footer.Width(footerWidth).Render(footer)
 }
+
+// footerHint composes global and context-specific key hints
+func (v *MainView) footerHint() string {
+    global := "Tab/Shift+Tab Switch • Shift+F Search • Shift+S Sort • Ctrl+C/q Quit"
+
+    if v.state.ShowAlbumModal || v.state.ShowArtistModal || v.state.ShowPlaylistModal || v.state.ShowSearchModal || v.state.ShowSortModal {
+        return global + " • Esc close • Enter select"
+    }
+
+    var ctx string
+    switch v.state.CurrentTab {
+    case models.HomeTab:
+        ctx = "↑↓ Navigate • PgUp/PgDn Sections • Enter select • Shift+Enter queue • R Refresh"
+    case models.AlbumsTab:
+        ctx = "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter view tracks • A/Alt+Enter queue album • R Refresh • Shift+S Sort"
+    case models.ArtistsTab:
+        ctx = "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter view albums • R Refresh • Shift+S Sort"
+    case models.PlaylistsTab:
+        ctx = "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter view tracks • A/Alt+Enter queue • R Refresh • Shift+S Sort"
+    case models.QueueTab:
+        ctx = "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter/Space play • X/Del remove • C clear • Alt+←/→ prev/next • Shift+↑/↓ volume"
+    case models.ConfigTab:
+        ctx = "↑↓ Move • Enter edit/toggle • F2 save • F3 test • Esc cancel"
+    }
+
+    if ctx != "" {
+        return global + " • " + ctx
+    }
+    return global
+}
+
+// formatRow renders a consistent list row with an optional right-aligned metadata column
+func (v *MainView) formatRow(left string, right string, selected bool, leading string) string {
+    // Approximate inner width
+    width := v.width
+    if width <= 0 { width = 80 }
+    maxLine := width - 6 // account for frame and prefix
+    if maxLine < 20 { maxLine = width - 2 }
+
+    prefix := "  "
+    if selected { prefix = "> " }
+
+    if leading != "" { leading += " " }
+    baseWidth := lipgloss.Width(prefix + leading)
+
+    leftText := left
+    rightText := right
+
+    if rightText != "" {
+        // ensure at least a space between left and right
+        rem := maxLine - baseWidth - 1 - lipgloss.Width(rightText)
+        if rem < 1 {
+            leftText = v.truncateToWidth(leftText, max(1, rem))
+        }
+        rem = maxLine - baseWidth - 1 - lipgloss.Width(rightText) - lipgloss.Width(leftText)
+        if rem < 0 { rem = 0 }
+        line := prefix + leading + leftText + strings.Repeat(" ", rem+1) + rightText
+        if selected {
+            return v.styles.ActiveField.Render(line)
+        }
+        return line
+    }
+
+    content := prefix + leading + v.truncateToWidth(leftText, maxLine-baseWidth)
+    if selected { return v.styles.ActiveField.Render(content) }
+    return content
+}
+
+// truncateToWidth truncates a string to a visual width and appends an ellipsis when needed
+func (v *MainView) truncateToWidth(s string, w int) string {
+    if w <= 0 { return "" }
+    if lipgloss.Width(s) <= w { return s }
+
+    target := w - 1
+    if target < 1 { target = 1 }
+
+    var b strings.Builder
+    width := 0
+    for _, r := range s {
+        rw := runeWidth(r)
+        if width+rw > target { break }
+        b.WriteRune(r)
+        width += rw
+    }
+    return b.String() + "…"
+}
+
+func runeWidth(r rune) int {
+    // Basic approximation; most ASCII and narrow runes are width 1
+    _ = utf8.RuneLen(r)
+    return 1
+}
+
+func max(a, b int) int { if a > b { return a }; return b }
 
 // Tab-specific render functions
 func (v *MainView) renderHomeTab() string {
@@ -198,8 +286,7 @@ func (v *MainView) renderHomeTab() string {
 		content.WriteString("\n\n")
 	}
 
-	// Instructions
-	content.WriteString("↑↓ Navigate • PgUp/PgDn Jump sections • Enter/Shift+Enter to select • R to refresh\n\n")
+    // Footer displays navigation instructions
 
 	// Render all four sections vertically
 	content.WriteString(v.renderHomeSections())
@@ -446,9 +533,7 @@ func (v *MainView) renderAlbumsTab() string {
 	var content strings.Builder
 	content.WriteString("💿 Albums\n\n")
 
-	// Show instructions
-	instructions := "↑↓ Navigate • PgUp/PgDn Jump 25 • Enter to view tracks • Alt+Enter/A to queue album • R to refresh • Shift+S to sort"
-	content.WriteString(instructions + "\n\n")
+    // Footer displays instructions; keep content focused
 
 	// Render all albums with smart viewport for large lists
 	startIdx := 0
@@ -490,20 +575,11 @@ func (v *MainView) renderAlbumsTab() string {
 }
 
 func (v *MainView) formatAlbumLine(album models.Album, selected bool) string {
-	// Format: [YEAR] Artist - Album Name (Tracks)
-	yearStr := ""
-	if album.Year > 0 {
-		yearStr = fmt.Sprintf("[%d] ", album.Year)
-	}
-
-	line := fmt.Sprintf("%s%s - %s (%d tracks)",
-		yearStr, album.Artist, album.Name, album.TrackCount)
-
-	if selected {
-		return v.styles.ActiveField.Render("> " + line)
-	}
-
-	return "  " + line
+    yearStr := ""
+    if album.Year > 0 { yearStr = fmt.Sprintf("[%d] ", album.Year) }
+    left := fmt.Sprintf("%s%s - %s", yearStr, album.Artist, album.Name)
+    right := fmt.Sprintf("%d tracks", album.TrackCount)
+    return v.formatRow(left, right, selected, "")
 }
 
 func (v *MainView) renderArtistsTab() string {
@@ -522,8 +598,7 @@ func (v *MainView) renderArtistsTab() string {
 	var content strings.Builder
 	content.WriteString("🎤 Artists\n\n")
 
-	// Show instructions
-	content.WriteString("↑↓ Navigate • PgUp/PgDn Jump 25 • Enter to view albums • R to refresh • Shift+S to sort\n\n")
+    // Footer displays instructions
 
 	// Render all artists with smart viewport for large lists
 	startIdx := 0
@@ -565,52 +640,22 @@ func (v *MainView) renderArtistsTab() string {
 }
 
 func (v *MainView) formatArtistLine(artist models.Artist, selected bool) string {
-	// Format: Artist Name (X albums)
-	albumText := "album"
-	if artist.AlbumCount != 1 {
-		albumText = "albums"
-	}
-
-	line := fmt.Sprintf("%s (%d %s)", artist.Name, artist.AlbumCount, albumText)
-
-	// Add star indicator if starred
-	if artist.StarredAt != nil {
-		line = "★ " + line
-	}
-
-	if selected {
-		return v.styles.ActiveField.Render("> " + line)
-	}
-
-	return "  " + line
+    unit := "album"; if artist.AlbumCount != 1 { unit = "albums" }
+    star := ""
+    if artist.StarredAt != nil { star = "★ " }
+    left := star + artist.Name
+    right := fmt.Sprintf("%d %s", artist.AlbumCount, unit)
+    return v.formatRow(left, right, selected, "")
 }
 
 func (v *MainView) formatPlaylistLine(playlist models.Playlist, selected bool) string {
-	// Format: Playlist Name (X songs) - Owner
-	songText := "song"
-	if playlist.SongCount != 1 {
-		songText = "songs"
-	}
-
-	line := fmt.Sprintf("%s (%d %s)", playlist.Name, playlist.SongCount, songText)
-
-	// Add owner info if not the current user
-	if playlist.Owner != "" {
-		line += fmt.Sprintf(" - by %s", playlist.Owner)
-	}
-
-	// Add public/private indicator
-	if playlist.Public {
-		line = "🌐 " + line
-	} else {
-		line = "🔒 " + line
-	}
-
-	if selected {
-		return v.styles.ActiveField.Render("> " + line)
-	}
-
-	return "  " + line
+    // Format with right-aligned counts and owner
+    unit := "song"; if playlist.SongCount != 1 { unit = "songs" }
+    icon := "🔒"; if playlist.Public { icon = "🌐" }
+    left := icon + " " + playlist.Name
+    right := fmt.Sprintf("%d %s", playlist.SongCount, unit)
+    if playlist.Owner != "" { right += fmt.Sprintf(" • by %s", playlist.Owner) }
+    return v.formatRow(left, right, selected, "")
 }
 
 func (v *MainView) renderPlaylistsTab() string {
@@ -629,8 +674,7 @@ func (v *MainView) renderPlaylistsTab() string {
 	var content strings.Builder
 	content.WriteString("📋 Playlists\n\n")
 
-	// Show instructions
-	content.WriteString("↑↓ Navigate • PgUp/PgDn Jump 25 • Enter to view tracks • Alt+Enter/A to queue playlist • R to refresh • Shift+S to sort\n\n")
+    // Footer displays instructions
 
 	// Render all playlists with smart viewport for large lists
 	startIdx := 0
@@ -681,8 +725,7 @@ func (v *MainView) renderQueueTab() string {
 		return content.String()
 	}
 
-	// Show instructions
-	content.WriteString(fmt.Sprintf("↑↓ Navigate • PgUp/PgDn Jump 25 • Enter/Space to play • X/Del to remove • C to clear all (%d tracks)\n\n", len(v.state.Queue)))
+    // Footer displays instructions
 
 	// Show current playing track if any
 	if v.state.CurrentTrack != nil {
@@ -734,42 +777,27 @@ func (v *MainView) renderQueueTab() string {
 }
 
 func (v *MainView) formatQueueLine(track models.Track, index int, selected bool) string {
-	// Format duration (seconds to mm:ss)
-	duration := ""
-	if track.Duration > 0 {
-		minutes := track.Duration / 60
-		seconds := track.Duration % 60
-		duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
-	}
+    // Duration right column
+    right := ""
+    if track.Duration > 0 {
+        minutes := track.Duration / 60
+        seconds := track.Duration % 60
+        right = fmt.Sprintf("%d:%02d", minutes, seconds)
+    }
 
-	// Build the track info without styling first
-	trackInfo := fmt.Sprintf("%s - %s (%s)%s", track.Artist, track.Title, track.Album, duration)
+    // Leading: index or play/pause glyph
+    leading := fmt.Sprintf("%2d.", index+1)
+    playing := v.state.CurrentTrack != nil && track.ID == v.state.CurrentTrack.ID
+    if playing {
+        if v.state.IsPlaying { leading = "▶" } else { leading = "⏸" }
+    }
 
-	var line string
-
-	// Indicate if this is the currently playing track
-	if v.state.CurrentTrack != nil && track.ID == v.state.CurrentTrack.ID {
-		if v.state.IsPlaying {
-			line = "▶ " + trackInfo
-		} else {
-			line = "⏸ " + trackInfo
-		}
-		// Use special styling for current track
-		if selected {
-			return v.styles.ActiveField.Render("> " + line)
-		}
-		return v.styles.CurrentTrack.Render("  " + line)
-	} else {
-		// Regular queue entry with styled number
-		queueNum := v.styles.QueueNumber.Render(fmt.Sprintf("%2d. ", index+1))
-		line = queueNum + trackInfo
-	}
-
-	if selected {
-		return v.styles.ActiveField.Render("> " + line)
-	}
-
-	return "  " + line
+    left := fmt.Sprintf("%s - %s (%s)", track.Artist, track.Title, track.Album)
+    line := v.formatRow(left, right, selected, leading)
+    if playing && !selected {
+        return v.styles.CurrentTrack.Render(line)
+    }
+    return line
 }
 
 func (v *MainView) renderConfigTab() string {
@@ -780,8 +808,8 @@ func (v *MainView) renderConfigTab() string {
 
     var sections []string
 
-    // Header
-    sections = append(sections, "⚙️  Configuration")
+    // Header (avoid emojis to keep borders aligned in all fonts)
+    sections = append(sections, "Configuration")
     sections = append(sections, "")
 
     // Navidrome section
@@ -796,12 +824,12 @@ func (v *MainView) renderConfigTab() string {
     // Server scrobbling status (display above scrobbling settings)
     if cf.ServerScrobblingDetected {
         if cf.ServerScrobblingEnabled {
-            sections = append(sections, "✅ Server Scrobbling Enabled (configured in Navidrome)")
+            sections = append(sections, "[OK] Server scrobbling enabled (configured in Navidrome)")
         } else {
-            sections = append(sections, "❌ Server Scrobbling Disabled (configure in Navidrome)")
+            sections = append(sections, "[X] Server scrobbling disabled (configure in Navidrome)")
         }
     } else {
-        sections = append(sections, "ℹ️  Server Scrobbling status unavailable")
+        sections = append(sections, "[i] Server scrobbling status unavailable")
     }
     sections = append(sections, "")
 
@@ -842,85 +870,82 @@ func (v *MainView) renderConfigTab() string {
 		sections = append(sections, "")
 	}
 
-	// Help text
-	if cf.EditMode {
-		sections = append(sections, v.styles.HelpText.Render("Enter to save • Esc to cancel"))
-	} else {
-		sections = append(sections, v.styles.HelpText.Render("↑↓ Navigate • Enter to edit • F2 Save • F3 Test connection"))
-	}
-
-	return strings.Join(sections, "\n")
+    return strings.Join(sections, "\n")
 }
 
 // renderConfigSection renders a section of configuration fields
 func (v *MainView) renderConfigSection(title string, fields []models.ConfigFormField, cf *models.ConfigFormState) string {
-	var lines []string
+    var lines []string
+    // Section title
+    lines = append(lines, v.styles.SectionTitle.Render(title))
 
-	// Section title
-	lines = append(lines, v.styles.SectionTitle.Render(title))
+    // Fixed inner width for box content
+    boxWidth := 45
+    // Top border
+    lines = append(lines, "┌"+strings.Repeat("─", boxWidth)+"┐")
 
-	// Top border
-	lines = append(lines, "┌"+strings.Repeat("─", 45)+"┐")
+    // Fields
+    for _, field := range fields {
+        lines = append(lines, v.renderConfigFieldLine(field, cf, boxWidth))
+        // Insert a spacer line between Last.fm and ListenBrainz groups
+        if title == "Scrobbling Settings" && field == models.LastFMPasswordField {
+            lines = append(lines, "│"+strings.Repeat(" ", boxWidth)+"│")
+        }
+    }
 
-	// Fields
-	for _, field := range fields {
-		lines = append(lines, v.renderConfigField(field, cf))
-	}
+    // Bottom border
+    lines = append(lines, "└"+strings.Repeat("─", boxWidth)+"┘")
 
-	// Bottom border
-	lines = append(lines, "└"+strings.Repeat("─", 45)+"┘")
-
-	return strings.Join(lines, "\n")
+    return strings.Join(lines, "\n")
 }
 
-// renderConfigField renders a single configuration field
-func (v *MainView) renderConfigField(field models.ConfigFormField, cf *models.ConfigFormState) string {
-	isActive := cf.ActiveField == field
-	label := cf.GetFieldLabel(field)
+// renderConfigFieldLine renders a single configuration field within a fixed-width box
+func (v *MainView) renderConfigFieldLine(field models.ConfigFormField, cf *models.ConfigFormState, boxWidth int) string {
+    isActive := cf.ActiveField == field
+    label := cf.GetFieldLabel(field)
 
-	var line string
+    // Build inner content (without borders) with a leading space for padding
+    inner := ""
 
-	if cf.IsCheckboxField(field) {
-		// Checkbox field
-		checked := cf.GetCheckboxValue(field)
-		checkbox := "□"
-		if checked {
-			checkbox = "☑"
-		}
+    if cf.IsCheckboxField(field) {
+        // Checkbox field (ASCII to avoid font issues)
+        checked := cf.GetCheckboxValue(field)
+        box := "[ ]"
+        if checked { box = "[x]" }
+        inner = fmt.Sprintf(" %s %s", box, label)
+    } else {
+        // Text input field
+        value := cf.GetFieldValue(field)
+        if cf.EditMode && isActive {
+            value = cf.CurrentInput
+        }
+        // Compute value width budget inside brackets
+        prefix := " " + label + ": ["
+        suffix := "]"
+        maxVal := boxWidth - lipgloss.Width(prefix) - lipgloss.Width(suffix)
+        if maxVal < 0 { maxVal = 0 }
+        if lipgloss.Width(value) > maxVal {
+            value = v.truncateToWidth(value, maxVal)
+        }
+        valPadded := value + strings.Repeat(" ", maxVal-lipgloss.Width(value))
+        inner = prefix + valPadded + suffix
+    }
 
-		line = fmt.Sprintf("│ %s %s", checkbox, label)
-	} else {
-		// Text input field
-		value := cf.GetFieldValue(field)
-		if cf.EditMode && isActive {
-			value = cf.CurrentInput
-		}
+    // Pad inner to full box width and add borders
+    pad := boxWidth - lipgloss.Width(inner)
+    if pad < 0 { pad = 0 }
+    line := "│" + inner + strings.Repeat(" ", pad) + "│"
 
-		// Pad the value to fit in the field
-		fieldWidth := 45 - len(label) - 6
-		if len(value) > fieldWidth {
-			value = value[:fieldWidth-3] + "..."
-		}
+    // Highlight active field
+    if isActive {
+        if cf.EditMode {
+            return v.styles.ActiveEditField.Render(line)
+        } else {
+            return v.styles.ActiveField.Render(line)
+        }
+    }
 
-		line = fmt.Sprintf("│ %s: [%-*s] │", label, fieldWidth, value)
-	}
-
-	// Highlight active field
-	if isActive {
-		if cf.EditMode {
-			return v.styles.ActiveEditField.Render(line)
-		} else {
-			return v.styles.ActiveField.Render(line)
-		}
-	}
-
-	// Complete the checkbox line format
-	if cf.IsCheckboxField(field) {
-		padding := 45 - len(line) + 1
-		line += strings.Repeat(" ", padding) + "│"
-	}
-
-	return v.styles.InactiveField.Render(line)
+    return v.styles.InactiveField.Render(line)
 }
 
 // renderPlayer creates the persistent player module

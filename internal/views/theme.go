@@ -7,63 +7,48 @@ import (
 
 // Theme contains the color palette for the application
 type Theme struct {
-	// Base Colors
-	Jet            lipgloss.Color // #333333 - Dark base/background
-	Aquamarine     lipgloss.Color // #a9fbd7 - Bright accent/active states
-	AfricanViolet  lipgloss.Color // #9f87af - Secondary elements
-	BlueMunsell    lipgloss.Color // #048ba8 - Headers/primary actions
-	Plum           lipgloss.Color // #9c528b - Errors/special states
-	
-	// Computed Colors for better contrast
-	White          lipgloss.Color // For text on dark backgrounds
-	LightGray      lipgloss.Color // For secondary text
-	DarkGray       lipgloss.Color // For borders/subtle elements
+    // Keep placeholders for future customization; we avoid hardcoded hex colors
+    // and rely on terminal palette or default styles.
+    Primary        lipgloss.Color
+    Accent         lipgloss.Color
+    Error          lipgloss.Color
+    Success        lipgloss.Color
+    Info           lipgloss.Color
+    AccentIndex    int
 }
 
 // NewTheme creates a new theme with the specified color palette and variant
-func NewTheme(variant string) Theme {
-	switch variant {
-	case "light":
-		return NewLightTheme()
-	case "dark", "":
-		fallthrough
-	default:
-		return NewDarkTheme()
-	}
+func NewTheme(variant string, accentIndex int) Theme {
+    switch variant {
+    case "light":
+        t := NewLightTheme()
+        t.AccentIndex = accentIndex
+        return t
+    case "dark", "":
+        fallthrough
+    default:
+        t := NewDarkTheme()
+        t.AccentIndex = accentIndex
+        return t
+    }
 }
 
 // NewDarkTheme creates the default dark theme with our palette
 func NewDarkTheme() Theme {
-	return Theme{
-		// Primary palette
-		Jet:           lipgloss.Color("#333333"),
-		Aquamarine:    lipgloss.Color("#a9fbd7"),
-		AfricanViolet: lipgloss.Color("#9f87af"),
-		BlueMunsell:   lipgloss.Color("#048ba8"),
-		Plum:          lipgloss.Color("#9c528b"),
-		
-		// Additional colors for better UI contrast
-		White:         lipgloss.Color("#ffffff"),
-		LightGray:     lipgloss.Color("#cccccc"),
-		DarkGray:      lipgloss.Color("#666666"),
-	}
+    // Map to basic ANSI palette indices so themes can override them.
+    return Theme{
+        Primary: lipgloss.Color("4"),   // blue
+        Accent:  lipgloss.Color("6"),   // cyan
+        Error:   lipgloss.Color("1"),   // red
+        Success: lipgloss.Color("2"),   // green
+        Info:    lipgloss.Color("4"),   // blue
+        AccentIndex: -1,
+    }
 }
 
 // NewLightTheme creates a light variant using the same palette with adjusted contrast
 func NewLightTheme() Theme {
-	return Theme{
-		// Primary palette with roles adjusted for light theme
-		Jet:           lipgloss.Color("#f5f5f5"), // Light background
-		Aquamarine:    lipgloss.Color("#048ba8"), // Darker for contrast on light
-		AfricanViolet: lipgloss.Color("#9f87af"),
-		BlueMunsell:   lipgloss.Color("#333333"), // Dark for text on light
-		Plum:          lipgloss.Color("#9c528b"),
-		
-		// Additional colors for light theme
-		White:         lipgloss.Color("#333333"), // Dark text
-		LightGray:     lipgloss.Color("#666666"), // Darker secondary text
-		DarkGray:      lipgloss.Color("#cccccc"), // Light borders
-	}
+    return NewDarkTheme()
 }
 
 // ThemedStyles contains all styled components using the theme
@@ -105,107 +90,91 @@ type ThemedStyles struct {
 
 // NewThemedStyles creates a complete set of themed styles
 func NewThemedStyles(theme Theme) ThemedStyles {
-	return ThemedStyles{
-		// Tab Navigation - Using Blue Munsell for headers/primary navigation
-		TabActive: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(theme.White).
-			Background(theme.BlueMunsell).
-			Padding(0, 1),
-		TabInactive: lipgloss.NewStyle().
-			Foreground(theme.LightGray).
-			Background(theme.Jet).
-			Padding(0, 1),
+    // Helper: active highlight style uses either reverse-video or a palette background
+    active := lipgloss.NewStyle().Bold(true)
+    if theme.AccentIndex >= 0 {
+        idx := fmt.Sprintf("%d", theme.AccentIndex)
+        active = active.Foreground(lipgloss.Color("0")).Background(lipgloss.Color(idx))
+    } else {
+        active = active.Reverse(true)
+    }
+    return ThemedStyles{
+        // Tab Navigation (use reverse/bold so it adapts to terminal colors)
+        TabActive: active.Copy().
+            Padding(0, 1),
+        TabInactive: lipgloss.NewStyle().
+            Foreground(lipgloss.Color("8")).
+            Padding(0, 1),
 
-		// Layout Components
-		Header: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(theme.White).
-			Background(theme.Plum). // Dark purple header
-			Padding(0, 1).
-			Width(100),
-		Content: lipgloss.NewStyle().
-			Padding(1).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(theme.DarkGray).
-			Background(theme.Jet),
-		Footer: lipgloss.NewStyle().
-			Foreground(theme.White).
-			Background(theme.AfricanViolet). // Lighter purple footer
-			Padding(0, 1),
-		Player: lipgloss.NewStyle().
-			Foreground(theme.White).
-			Background(theme.AfricanViolet).
-			Padding(0, 1).
-			Bold(true),
-		LogArea: lipgloss.NewStyle().
-			Foreground(theme.LightGray).
-			Background(theme.Jet).
-			Padding(0, 1),
+        // Layout Components (avoid hard-coded backgrounds)
+        Header: lipgloss.NewStyle().
+            Bold(true).
+            Reverse(true).
+            Padding(0, 1).
+            Width(100),
+        Content: lipgloss.NewStyle().
+            Padding(1).
+            Border(lipgloss.RoundedBorder()),
+        Footer: lipgloss.NewStyle().
+            Bold(false).
+            Reverse(true). // use terminal selection-style background
+            Border(lipgloss.RoundedBorder()).
+            BorderTop(false).
+            BorderBottom(false).
+            Padding(0, 1),
+        Player: lipgloss.NewStyle().
+            Padding(0, 1).
+            Bold(true),
+        LogArea: lipgloss.NewStyle().
+            Padding(0, 1),
 
-		// Interactive Elements - Aquamarine for active states
-		ActiveField: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(theme.Jet).
-			Background(theme.Aquamarine),
-		ActiveEditField: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(theme.White).
-			Background(theme.Plum), // Plum for edit mode
-		InactiveField: lipgloss.NewStyle().
-			Foreground(theme.LightGray),
+        // Interactive Elements
+        ActiveField: active.Copy(),
+        ActiveEditField: active.Copy().Underline(true),
+        InactiveField: lipgloss.NewStyle(),
 
-		// Content Sections
-		SectionTitle: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(theme.BlueMunsell),
-		ActiveSectionTitle: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(theme.White).
-			Background(theme.BlueMunsell). // Different from selection highlight
-			Padding(0, 1),
-		HelpText: lipgloss.NewStyle().
-			Foreground(theme.AfricanViolet).
-			Italic(true),
+        // Content Sections
+        SectionTitle: lipgloss.NewStyle().
+            Bold(true),
+        ActiveSectionTitle: lipgloss.NewStyle().
+            Bold(true).
+            Underline(true),
+        HelpText: lipgloss.NewStyle().
+            Faint(true).
+            Italic(true),
 
-		// Status Messages
-		ErrorMessage: lipgloss.NewStyle().
-			Foreground(theme.Plum).
-			Bold(true),
-		SuccessMessage: lipgloss.NewStyle().
-			Foreground(theme.Aquamarine).
-			Bold(true),
-		InfoMessage: lipgloss.NewStyle().
-			Foreground(theme.AfricanViolet).
-			Bold(true),
+        // Status Messages (use ANSI palette indices)
+        ErrorMessage: lipgloss.NewStyle().
+            Foreground(theme.Error).
+            Bold(true),
+        SuccessMessage: lipgloss.NewStyle().
+            Foreground(theme.Success).
+            Bold(true),
+        InfoMessage: lipgloss.NewStyle().
+            Foreground(theme.Info).
+            Bold(true),
 
-		// Modal Components
-		ModalBorder: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(theme.BlueMunsell).
-			Background(theme.Jet).
-			Padding(1),
-		ModalContent: lipgloss.NewStyle().
-			Foreground(theme.White).
-			Background(theme.Jet),
+        // Modal Components
+        ModalBorder: lipgloss.NewStyle().
+            Border(lipgloss.RoundedBorder()).
+            Padding(1),
+        ModalContent: lipgloss.NewStyle(),
 
-		// Special States
-		CurrentTrack: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(theme.Aquamarine). // Bright highlight for currently playing
-			Background(theme.Jet),
-		QueueNumber: lipgloss.NewStyle().
-			Foreground(theme.AfricanViolet),
-	}
+        // Special States
+        CurrentTrack: lipgloss.NewStyle().
+            Bold(true),
+        QueueNumber: lipgloss.NewStyle().
+            Faint(true),
+    }
 }
 
 // GetThemeInfo returns a formatted string showing the current theme colors
 func (t Theme) GetThemeInfo() string {
-	info := fmt.Sprintf("Theme Colors:\n")
-	info += fmt.Sprintf("  Jet: %s (base/background)\n", string(t.Jet))
-	info += fmt.Sprintf("  Aquamarine: %s (active/highlights)\n", string(t.Aquamarine))
-	info += fmt.Sprintf("  African Violet: %s (secondary)\n", string(t.AfricanViolet))
-	info += fmt.Sprintf("  Blue Munsell: %s (headers/primary)\n", string(t.BlueMunsell))
-	info += fmt.Sprintf("  Plum: %s (errors/special)\n", string(t.Plum))
-	return info
+    info := fmt.Sprintf("Theme Colors (ANSI-based):\n")
+    info += fmt.Sprintf("  Primary: %s\n", string(t.Primary))
+    info += fmt.Sprintf("  Accent: %s\n", string(t.Accent))
+    info += fmt.Sprintf("  Error: %s\n", string(t.Error))
+    info += fmt.Sprintf("  Success: %s\n", string(t.Success))
+    info += fmt.Sprintf("  Info: %s\n", string(t.Info))
+    return info
 }

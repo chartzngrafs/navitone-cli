@@ -32,10 +32,13 @@ type AudioConfig struct {
 
 // UIConfig contains user interface settings
 type UIConfig struct {
-	Theme          string            `toml:"theme"`
-	ShowAlbumArt   bool              `toml:"show_album_art"`
-	HomeAlbumCount int               `toml:"home_album_count"` // Albums shown per section on home tab
-	Keybindings    map[string]string `toml:"keybindings"`
+    Theme          string            `toml:"theme"`
+    ShowAlbumArt   bool              `toml:"show_album_art"`
+    HomeAlbumCount int               `toml:"home_album_count"` // Albums shown per section on home tab
+    Keybindings    map[string]string `toml:"keybindings"`
+    // AccentIndex allows users to choose an ANSI palette index (0-15) for active highlights.
+    // Set to -1 to use reverse-video highlighting that adapts to terminal theme.
+    AccentIndex    int               `toml:"accent_index"`
 }
 
 // ScrobblingConfig contains scrobbling service settings
@@ -75,15 +78,16 @@ func DefaultConfig() *Config {
 			Volume:     100,
 			BufferSize: 4096,
 		},
-		UI: UIConfig{
-			Theme:          "dark",
-			ShowAlbumArt:   false, // ASCII art not implemented yet
-			HomeAlbumCount: 8,
-			Keybindings: map[string]string{
-				"quit":       "ctrl+c,q",
-				"next_tab":   "tab",
-				"prev_tab":   "shift+tab",
-				"play_pause": "space",
+        UI: UIConfig{
+            Theme:          "dark",
+            ShowAlbumArt:   false, // ASCII art not implemented yet
+            HomeAlbumCount: 8,
+            AccentIndex:    -1,
+            Keybindings: map[string]string{
+                "quit":       "ctrl+c,q",
+                "next_tab":   "tab",
+                "prev_tab":   "shift+tab",
+                "play_pause": "space",
 				"next_track": "alt+right",
 				"prev_track": "alt+left",
 				"volume_up":  "shift+up",

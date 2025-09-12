@@ -82,10 +82,10 @@ func NewApp() *App {
 	}
 
 
-	app := &App{
-		state: state,
-		view:  views.NewMainView(state, cfg.UI.Theme),
-	}
+    app := &App{
+        state: state,
+        view:  views.NewMainView(state, cfg.UI.Theme, cfg.UI.AccentIndex),
+    }
 
     // Initialize Navidrome client if config is valid
     app.initializeNavidromeClient()

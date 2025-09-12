@@ -272,6 +272,7 @@ token = \"\"
 theme = \"dark\"
 show_album_art = false
 home_album_count = 8
+accent_index = -1
 ```
 
 Notes:
