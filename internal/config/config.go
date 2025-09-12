@@ -39,6 +39,11 @@ type UIConfig struct {
     // AccentIndex allows users to choose an ANSI palette index (0-15) for active highlights.
     // Set to -1 to use reverse-video highlighting that adapts to terminal theme.
     AccentIndex    int               `toml:"accent_index"`
+    
+    // ASCII Art quality settings
+    ArtworkQuality string `toml:"artwork_quality"` // "low", "medium", "high", "ultra"
+    ArtworkColor   bool   `toml:"artwork_color"`   // Enable colored ASCII art
+    ArtworkSize    string `toml:"artwork_size"`    // "small", "medium", "large"
 }
 
 // ScrobblingConfig contains scrobbling service settings
@@ -80,9 +85,13 @@ func DefaultConfig() *Config {
 		},
         UI: UIConfig{
             Theme:          "dark",
-            ShowAlbumArt:   false, // ASCII art not implemented yet
+            ShowAlbumArt:   false, // Users need to enable manually
             HomeAlbumCount: 8,
             AccentIndex:    -1,
+            // ASCII Art quality defaults
+            ArtworkQuality: "high",   // Default to high quality
+            ArtworkColor:   false,    // Start with monochrome for compatibility
+            ArtworkSize:    "medium", // Balanced size
             Keybindings: map[string]string{
                 "quit":       "ctrl+c,q",
                 "next_tab":   "tab",

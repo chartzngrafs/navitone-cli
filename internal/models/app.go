@@ -188,6 +188,11 @@ type AppState struct {
 	
 	// Log state (for contained event logging)
 	LogMessages []string
+	
+	// Artwork state
+	CurrentArtwork      string // ASCII art for currently selected item
+	LoadingArtwork      bool   // Whether artwork is being loaded
+	ShowArtwork         bool   // Whether to show artwork (based on config + space)
 }
 
 // AddLogMessage adds a log message to the log buffer, keeping only the latest messages

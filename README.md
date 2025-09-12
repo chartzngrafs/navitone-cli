@@ -14,6 +14,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Smart Navigation** - Modal-based browsing with intuitive keybindings
 - **Queue Management** - Complete playback controls with smart queue management
 - **Audio Visualizer** - Integrated Cava support with Shift+C hotkey for new terminal launch
+- **ASCII Album Art** - Display album artwork as ASCII art in Albums and Artists tabs
 - **Scrobbling Support** - Last.fm and ListenBrainz integration with offline queuing
 
 ## 🚀 Current Status
@@ -31,6 +32,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 - **Modal System** - Seamless navigation flow with context-aware controls across Albums, Artists, and Playlists
 - **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
 - **Enhanced Global Search** - Shift+F modal search with intelligent result limiting, pagination, and dual-mode playback
+- **ASCII Album Art System** - Configurable ASCII artwork display with Navidrome + MusicBrainz fallback, intelligent caching, and responsive layout
 - **Scrobbling System** - Server-side scrobbling via Navidrome (preferred) with optional client-side Last.fm/ListenBrainz and Now Playing updates
 - **Process Management** - Proper MPV lifecycle with graceful shutdown and cleanup
 
@@ -41,7 +43,6 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 
 ### 📋 Planned (Phase 2)
 - Enhanced mouse support
-- Album art display (ASCII)
 - Advanced features (lyrics, advanced queue management)
 - Performance optimizations
 - Playlist creation and management
@@ -241,6 +242,31 @@ The application will automatically download required Go dependencies:
 - **Modal Navigation**: Seamless drilling down from artists → albums → tracks
 - **Quick Actions**: Alt+Enter for immediate queuing, bypass confirmation modals
 
+## 🎨 ASCII Album Art
+
+### Features
+- **Smart Display** - Shows ASCII artwork below album/artist listings when selected
+- **Dual Sources** - Uses Navidrome cover art URLs first, falls back to MusicBrainz Cover Art Archive
+- **Intelligent Caching** - Caches converted artwork locally to improve performance
+- **Responsive Layout** - Automatically adjusts item count to make room for artwork
+- **Config Toggle** - Enable/disable via Config tab "Show Artwork" checkbox
+
+### How It Works
+1. Navigate to Albums or Artists tab
+2. Enable "Show Artwork" in Config tab
+3. Select any album/artist - artwork appears below the list
+4. First load may take a moment (downloads and converts image)
+5. Subsequent views use cached ASCII art for instant display
+
+### Technical Details
+- **Quality Levels** - Low (10 chars), Medium (69 chars), High (optimized), Ultra (braille)
+- **Resolution Options** - Small (35x18), Medium (50x25), Large (70x35)
+- **Color Support** - Full 24-bit color for modern terminals
+- **Cache Location** - `~/.cache/navitone-cli/artwork/`
+- **Cache Expiration** - 30 days
+- **Fallback Chain** - Navidrome → MusicBrainz Cover Art Archive → None
+- **Format Support** - All formats supported by ascii-image-converter library
+
 ## ⚙️ Configuration
 
 Configuration is stored in `~/.config/navitone-cli/config.toml`:
@@ -274,7 +300,10 @@ token = \"\"
 
 [ui]
 theme = \"dark\"
-show_album_art = false
+show_album_art = true     # Enable ASCII artwork display
+artwork_quality = \"high\" # Quality: low, medium, high, ultra
+artwork_color = false     # Enable colored ASCII art
+artwork_size = \"medium\"  # Size: small, medium, large
 home_album_count = 8
 accent_index = -1
 ```
@@ -344,13 +373,13 @@ go build -o bin/navitone ./cmd/navitone
 
 ### Phase 2 (Remaining Features)
 - [x] **Playlists Tab** - User playlist viewing and playback (COMPLETE)
+- [x] **ASCII Album Art System** - Configurable artwork display with caching and fallback sources (COMPLETE)
 - [ ] **Playlist Management** - Create, edit, delete user playlists  
 - [ ] **Sorting Options** - Sort controls for Albums, Artists, Playlists tabs
 - [ ] **Advanced Queue Features** - Reorder tracks, shuffle mode, repeat modes
 
 ### Phase 3 (Advanced Features)
 - [ ] Advanced mouse support
-- [ ] Album art display (ASCII)
 - [ ] Lyrics integration  
 - [ ] Performance optimizations
 - [ ] Plugin system
@@ -402,4 +431,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Note**: Phase 1 core functionality is **complete**! The application now features a professional MPV-powered audio backend with universal format support, intuitive modal navigation, smart queue management, and clean keybindings. Ready for daily use with any Navidrome server.
 
-**Latest Update**: ✅ **Complete Playlists Tab Implementation** - Fully implemented the Playlists tab with comprehensive playlist viewing, navigation, and playback capabilities. Features include: playlist browsing with track counts and metadata, Enter to view tracks modal, Alt+Enter/A to queue entire playlists, modal navigation with play-from-any-track functionality, PgUp/PgDn support for large playlists, and consistent integration with the existing modal system. The Playlists tab now provides the same intuitive navigation experience as Albums and Artists tabs, completing the core content browsing functionality.
+**Latest Update**: ✅ **ASCII Album Art System Implementation** - Fully implemented configurable ASCII artwork display system. Features include: smart artwork display below album listings when selected, dual source support (Navidrome + MusicBrainz fallback), intelligent local caching system, responsive layout that adjusts item count for artwork space, config toggles for enable/disable and quality settings, and automatic play count aggregation for artists. The artwork system provides high-quality ASCII art conversion with multiple resolution and quality options, enhancing the visual experience while maintaining terminal compatibility.

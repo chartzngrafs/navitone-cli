@@ -584,7 +584,12 @@ func (v *MainView) renderAlbumsTab() string {
 	endIdx := len(v.state.Albums)
 
 	// For very large lists, show a window around the selected item
-	maxVisible := 25 // Show more items since we removed pagination
+	// Adjust maxVisible based on artwork display
+	maxVisible := 25 // Default items visible
+	if v.state.ShowArtwork && v.state.CurrentArtwork != "" {
+		maxVisible = 15 // Reduce visible items when showing artwork
+	}
+	
 	if len(v.state.Albums) > maxVisible {
 		// Center the viewport around the selected item
 		viewportStart := v.state.SelectedAlbumIndex - maxVisible/2
@@ -613,6 +618,11 @@ func (v *MainView) renderAlbumsTab() string {
 		} else {
 			content.WriteString(fmt.Sprintf("\n%d albums total", len(v.state.Albums)))
 		}
+	}
+
+	// Show artwork if enabled and available
+	if v.state.ShowArtwork && len(v.state.Albums) > 0 {
+		content.WriteString(v.renderAlbumArtwork())
 	}
 
 	return content.String()
@@ -653,7 +663,9 @@ func (v *MainView) renderArtistsTab() string {
 	endIdx := len(v.state.Artists)
 
 	// For very large lists, show a window around the selected item
-	maxVisible := 25 // Show more items since we removed pagination
+	// Artists tab always shows 25 items (no artwork)
+	maxVisible := 25
+	
 	if len(v.state.Artists) > maxVisible {
 		// Center the viewport around the selected item
 		viewportStart := v.state.SelectedArtistIndex - maxVisible/2
@@ -683,6 +695,8 @@ func (v *MainView) renderArtistsTab() string {
 			content.WriteString(fmt.Sprintf("\n%d artists total", len(v.state.Artists)))
 		}
 	}
+
+	// Note: Artist artwork removed - only Albums tab shows artwork
 
 	return content.String()
 }
@@ -892,6 +906,16 @@ func (v *MainView) renderConfigTab() string {
         models.ListenBrainzEnabledField,
         models.ListenBrainzTokenField,
     }, cf))
+
+	sections = append(sections, "")
+
+	// UI section
+	sections = append(sections, v.renderConfigSection("UI Settings", []models.ConfigFormField{
+		models.ShowArtworkField,
+		models.ArtworkQualityField,
+		models.ArtworkColorField,
+		models.ArtworkSizeField,
+	}, cf))
 
 	sections = append(sections, "")
 
@@ -1554,3 +1578,33 @@ func (v *MainView) getAvailableSortOptions() []models.SortOption {
 	}
 	return available
 }
+
+// renderAlbumArtwork renders ASCII artwork for the currently selected album
+func (v *MainView) renderAlbumArtwork() string {
+	if v.state.LoadingArtwork {
+		return "\n\n⏳ Loading artwork..."
+	}
+
+	if v.state.CurrentArtwork == "" {
+		return "" // No artwork to display
+	}
+
+	var content strings.Builder
+	content.WriteString("\n\n")
+
+	// Add selected album info if we have it
+	if len(v.state.Albums) > v.state.SelectedAlbumIndex {
+		album := v.state.Albums[v.state.SelectedAlbumIndex]
+		content.WriteString(fmt.Sprintf("🎨 %s - %s", album.Artist, album.Name))
+		if album.Year > 0 {
+			content.WriteString(fmt.Sprintf(" (%d)", album.Year))
+		}
+		content.WriteString("\n\n")
+	}
+
+	// Add the ASCII artwork
+	content.WriteString(v.state.CurrentArtwork)
+
+	return content.String()
+}
+

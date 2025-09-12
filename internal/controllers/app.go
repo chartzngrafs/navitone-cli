@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"navitone-cli/internal/artwork"
 	"navitone-cli/internal/audio"
 	"navitone-cli/internal/config"
 	"navitone-cli/internal/models"
@@ -27,6 +28,7 @@ type App struct {
 	navidromeClient *navidrome.Client
 	audioManager    *audio.Manager
 	scrobbler       *scrobbling.Manager
+	artworkManager  *artwork.Manager
 }
 
 // setupDebugLogging sets up file logging for debug output
@@ -80,6 +82,11 @@ func NewApp() *App {
 		MostPlayedAlbums:     make([]models.Album, 0),
 		TopTracks:            make([]models.Track, 0),
 		LoadingHomeData:      false,
+		
+		// Initialize artwork state
+		CurrentArtwork:      "",
+		LoadingArtwork:      false,
+		ShowArtwork:         cfg.UI.ShowAlbumArt,
 	}
 
 
@@ -118,6 +125,18 @@ func NewApp() *App {
 	} else {
 		app.logMessage("Audio manager not initialized - Navidrome client is nil (check config)")
 	}
+
+	// Initialize artwork manager
+	artworkManager, err := artwork.NewManager(cfg)
+	if err == nil {
+		app.artworkManager = artworkManager
+		app.logMessage("Artwork manager initialized successfully")
+	} else {
+		app.logMessage(fmt.Sprintf("Failed to create artwork manager: %v", err))
+	}
+
+	// Update artwork display state based on config
+	app.updateArtworkDisplayState()
 
 	app.logMessage("Navitone started successfully")
 	
@@ -722,6 +741,12 @@ func (a *App) saveConfig() (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
+	// Update artwork manager config and display state
+	if a.artworkManager != nil {
+		a.artworkManager.UpdateConfig(cf.Config)
+		a.updateArtworkDisplayState()
+	}
+
 	cf.ValidationError = ""
 	cf.ConnectionStatus = "Configuration saved successfully!"
 	return a, nil
@@ -847,10 +872,16 @@ func (a *App) handleTabChange() tea.Cmd {
 		if len(a.state.Albums) == 0 && a.navidromeClient != nil && !a.state.LoadingAlbums {
 			return a.loadAlbums()
 		}
+		// Load artwork for current selection when entering tab
+		a.updateArtworkDisplayState()
+		a.loadCurrentArtwork()
 	case models.ArtistsTab:
 		if len(a.state.Artists) == 0 && a.navidromeClient != nil && !a.state.LoadingArtists {
 			return a.loadArtists()
 		}
+		// Load artwork for current selection when entering tab
+		a.updateArtworkDisplayState()
+		a.loadCurrentArtwork()
     case models.PlaylistsTab:
         if len(a.state.Playlists) == 0 && a.navidromeClient != nil && !a.state.LoadingPlaylists {
             return a.loadPlaylists()
@@ -1091,10 +1122,12 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up":
 		if a.state.SelectedAlbumIndex > 0 {
 			a.state.SelectedAlbumIndex--
+			a.loadCurrentArtwork()
 		}
 	case "down":
 		if a.state.SelectedAlbumIndex < len(a.state.Albums)-1 {
 			a.state.SelectedAlbumIndex++
+			a.loadCurrentArtwork()
 		}
 	case "pgup":
 		// Move up by 25 items
@@ -1102,12 +1135,14 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.SelectedAlbumIndex < 0 {
 			a.state.SelectedAlbumIndex = 0
 		}
+		a.loadCurrentArtwork()
 	case "pgdown":
 		// Move down by 25 items
 		a.state.SelectedAlbumIndex += 25
 		if a.state.SelectedAlbumIndex >= len(a.state.Albums) {
 			a.state.SelectedAlbumIndex = len(a.state.Albums) - 1
 		}
+		a.loadCurrentArtwork()
 	case "enter":
 		// Show album details modal (regular Enter)
 		if a.state.SelectedAlbumIndex < len(a.state.Albums) {
@@ -1620,10 +1655,12 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up":
 		if a.state.SelectedArtistIndex > 0 {
 			a.state.SelectedArtistIndex--
+			a.loadCurrentArtwork()
 		}
 	case "down":
 		if a.state.SelectedArtistIndex < len(a.state.Artists)-1 {
 			a.state.SelectedArtistIndex++
+			a.loadCurrentArtwork()
 		}
 	case "pgup":
 		// Move up by 25 items
@@ -1631,12 +1668,14 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.SelectedArtistIndex < 0 {
 			a.state.SelectedArtistIndex = 0
 		}
+		a.loadCurrentArtwork()
 	case "pgdown":
 		// Move down by 25 items
 		a.state.SelectedArtistIndex += 25
 		if a.state.SelectedArtistIndex >= len(a.state.Artists) {
 			a.state.SelectedArtistIndex = len(a.state.Artists) - 1
 		}
+		a.loadCurrentArtwork()
 	case "enter":
 		// Show artist albums modal
 		if a.state.SelectedArtistIndex < len(a.state.Artists) {
@@ -2829,3 +2868,63 @@ func (a *App) sortPlaylistsInMemory(sortBy string) {
 	// Reset selection to the beginning after sorting  
 	// Note: Playlists might not have a selection index yet, this will be added when Playlists tab is implemented
 }
+
+// updateArtworkDisplayState updates whether artwork should be displayed based on config and space
+func (a *App) updateArtworkDisplayState() {
+	if a.artworkManager == nil {
+		a.state.ShowArtwork = false
+		return
+	}
+
+	// Check if artwork is enabled in config
+	enabled := a.artworkManager.IsEnabled()
+	
+	// For now, always show if enabled (space checking can be added later)
+	a.state.ShowArtwork = enabled
+	
+	// Load artwork for current selection if showing artwork
+	if enabled {
+		a.loadCurrentArtwork()
+	} else {
+		a.state.CurrentArtwork = ""
+		a.state.LoadingArtwork = false
+	}
+}
+
+// loadCurrentArtwork loads artwork for the currently selected item
+func (a *App) loadCurrentArtwork() {
+	if a.artworkManager == nil || !a.state.ShowArtwork {
+		return
+	}
+
+	// Load artwork based on current tab and selection
+	switch a.state.CurrentTab {
+	case models.AlbumsTab:
+		if len(a.state.Albums) > 0 && a.state.SelectedAlbumIndex < len(a.state.Albums) {
+			a.loadAlbumArtwork(a.state.Albums[a.state.SelectedAlbumIndex])
+		}
+	// Note: Artist artwork removed - only Albums tab shows artwork
+	}
+}
+
+// loadAlbumArtwork loads artwork for a specific album (synchronous for now)
+func (a *App) loadAlbumArtwork(album models.Album) {
+	if a.artworkManager == nil {
+		return
+	}
+	
+	a.state.LoadingArtwork = true
+	a.state.CurrentArtwork = "" // Clear previous artwork
+	
+	artwork, err := a.artworkManager.GetAlbumArtwork(album)
+	if err != nil {
+		a.logMessage(fmt.Sprintf("Failed to load artwork for %s: %v", album.Name, err))
+		a.state.CurrentArtwork = ""
+	} else {
+		a.state.CurrentArtwork = artwork
+		a.logMessage(fmt.Sprintf("Loaded artwork for %s (%d chars)", album.Name, len(artwork)))
+	}
+	
+	a.state.LoadingArtwork = false
+}
+

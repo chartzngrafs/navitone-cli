@@ -17,6 +17,10 @@ const (
 	LastFMPasswordField
 	ListenBrainzEnabledField
 	ListenBrainzTokenField
+	ShowArtworkField
+	ArtworkQualityField
+	ArtworkColorField
+	ArtworkSizeField
 	VolumeField
 	AudioDeviceField
 	BufferSizeField
@@ -71,6 +75,10 @@ func (cfs *ConfigFormState) GetFieldValue(field ConfigFormField) string {
 		return cfs.Config.Scrobbling.ListenBrainz.Token[:min(8, len(cfs.Config.Scrobbling.ListenBrainz.Token))] + "..."
 	case VolumeField:
 		return fmt.Sprintf("%d%%", cfs.Config.Audio.Volume)
+	case ArtworkQualityField:
+		return cfs.Config.UI.ArtworkQuality
+	case ArtworkSizeField:
+		return cfs.Config.UI.ArtworkSize
 	case AudioDeviceField:
 		if cfs.Config.Audio.Device == "" {
 			return "Auto-detect"
@@ -102,6 +110,14 @@ func (cfs *ConfigFormState) GetFieldLabel(field ConfigFormField) string {
         return "Enable ListenBrainz"
     case ListenBrainzTokenField:
         return "ListenBrainz Token"
+    case ShowArtworkField:
+        return "Show Artwork"
+    case ArtworkQualityField:
+        return "Artwork Quality"
+    case ArtworkColorField:
+        return "Artwork Color"
+    case ArtworkSizeField:
+        return "Artwork Size"
     case VolumeField:
         return "Volume"
     case AudioDeviceField:
@@ -115,7 +131,7 @@ func (cfs *ConfigFormState) GetFieldLabel(field ConfigFormField) string {
 
 // IsCheckboxField returns true if the field is a checkbox
 func (cfs *ConfigFormState) IsCheckboxField(field ConfigFormField) bool {
-	return field == LastFMEnabledField || field == ListenBrainzEnabledField
+	return field == LastFMEnabledField || field == ListenBrainzEnabledField || field == ShowArtworkField || field == ArtworkColorField
 }
 
 // GetCheckboxValue returns the checkbox value for boolean fields
@@ -125,6 +141,10 @@ func (cfs *ConfigFormState) GetCheckboxValue(field ConfigFormField) bool {
 		return cfs.Config.Scrobbling.LastFM.Enabled
 	case ListenBrainzEnabledField:
 		return cfs.Config.Scrobbling.ListenBrainz.Enabled
+	case ShowArtworkField:
+		return cfs.Config.UI.ShowAlbumArt
+	case ArtworkColorField:
+		return cfs.Config.UI.ArtworkColor
 	default:
 		return false
 	}
@@ -145,6 +165,10 @@ func (cfs *ConfigFormState) SetFieldValue(field ConfigFormField, value string) {
 		cfs.Config.Scrobbling.LastFM.Password = value
 	case ListenBrainzTokenField:
 		cfs.Config.Scrobbling.ListenBrainz.Token = value
+	case ArtworkQualityField:
+		cfs.Config.UI.ArtworkQuality = value
+	case ArtworkSizeField:
+		cfs.Config.UI.ArtworkSize = value
 	case AudioDeviceField:
 		cfs.Config.Audio.Device = value
 	}
@@ -157,6 +181,10 @@ func (cfs *ConfigFormState) ToggleCheckbox(field ConfigFormField) {
 		cfs.Config.Scrobbling.LastFM.Enabled = !cfs.Config.Scrobbling.LastFM.Enabled
 	case ListenBrainzEnabledField:
 		cfs.Config.Scrobbling.ListenBrainz.Enabled = !cfs.Config.Scrobbling.ListenBrainz.Enabled
+	case ShowArtworkField:
+		cfs.Config.UI.ShowAlbumArt = !cfs.Config.UI.ShowAlbumArt
+	case ArtworkColorField:
+		cfs.Config.UI.ArtworkColor = !cfs.Config.UI.ArtworkColor
 	}
 }
 
