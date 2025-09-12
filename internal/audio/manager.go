@@ -178,11 +178,15 @@ func (m *Manager) CheckStreamingPermissions() error {
 
 // ToggleShuffle toggles shuffle mode on/off (if implemented in MPV manager)
 func (m *Manager) ToggleShuffle() {
-	// TODO: Implement shuffle mode in MPV manager
+    if m.mpvManager != nil {
+        m.mpvManager.ToggleShuffle()
+    }
 }
 
 // IsShuffleEnabled returns whether shuffle mode is enabled (if implemented in MPV manager)
 func (m *Manager) IsShuffleEnabled() bool {
-	// TODO: Implement shuffle mode in MPV manager
-	return false
+    if m.mpvManager != nil {
+        return m.mpvManager.IsShuffleEnabled()
+    }
+    return false
 }

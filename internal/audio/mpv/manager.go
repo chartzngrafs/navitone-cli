@@ -1,12 +1,13 @@
 package mpv
 
 import (
-	"fmt"
-	"navitone-cli/internal/models"
-	"navitone-cli/pkg/navidrome"
-	"navitone-cli/pkg/scrobbling"
-	"sync"
-	"time"
+    "fmt"
+    "math/rand"
+    "navitone-cli/internal/models"
+    "navitone-cli/pkg/navidrome"
+    "navitone-cli/pkg/scrobbling"
+    "sync"
+    "time"
 )
 
 // Manager handles MPV-based audio playback and queue management
@@ -25,7 +26,7 @@ type Manager struct {
 	isPlaying        bool
 	isPaused         bool
 	repeatMode       RepeatMode
-	shuffleMode      bool
+    shuffleMode      bool
 	position         time.Duration
 	duration         time.Duration
 	volume           float64
@@ -152,16 +153,16 @@ func (m *Manager) AddTracksToQueue(tracks []models.Track) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.shuffleMode && len(m.originalQueue) > 0 {
-		// If shuffle is on, add to both queues
-		m.originalQueue = append(m.originalQueue, tracks...)
-		// Add to current queue and shuffle new tracks
-		newTracksStart := len(m.queue)
-		m.queue = append(m.queue, tracks...)
-		m.shuffleSlice(m.queue[newTracksStart:])
-	} else {
-		m.queue = append(m.queue, tracks...)
-	}
+    if m.shuffleMode && len(m.originalQueue) > 0 {
+        // If shuffle is on, add to both queues
+        m.originalQueue = append(m.originalQueue, tracks...)
+        // Add to current queue and shuffle new tracks
+        newTracksStart := len(m.queue)
+        m.queue = append(m.queue, tracks...)
+        m.shuffleSlice(m.queue[newTracksStart:])
+    } else {
+        m.queue = append(m.queue, tracks...)
+    }
 
 	m.logMessage(fmt.Sprintf("Added %d tracks to queue (shuffle: %v)", len(tracks), m.shuffleMode))
 	m.notifyStateChange()
@@ -561,10 +562,84 @@ func (m *Manager) getPreviousTrackIndex() int {
 
 // shuffleSlice shuffles a slice of tracks in place
 func (m *Manager) shuffleSlice(tracks []models.Track) {
-	for i := len(tracks) - 1; i > 0; i-- {
-		j := m.currentIndex % (i + 1) // Simple pseudo-random
-		tracks[i], tracks[j] = tracks[j], tracks[i]
-	}
+    // Fisher-Yates shuffle with math/rand
+    for i := len(tracks) - 1; i > 0; i-- {
+        j := rand.Intn(i + 1)
+        tracks[i], tracks[j] = tracks[j], tracks[i]
+    }
+}
+
+// ToggleShuffle toggles shuffle mode on/off
+func (m *Manager) ToggleShuffle() {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+
+    m.shuffleMode = !m.shuffleMode
+
+    if m.shuffleMode {
+        // Seed RNG for shuffle randomness
+        rand.Seed(time.Now().UnixNano())
+        // Save original order
+        m.originalQueue = make([]models.Track, len(m.queue))
+        copy(m.originalQueue, m.queue)
+
+        // Track currently playing item
+        var currentTrack *models.Track
+        if m.currentIndex >= 0 && m.currentIndex < len(m.queue) {
+            ct := m.queue[m.currentIndex]
+            currentTrack = &ct
+        }
+
+        // Shuffle entire queue
+        m.shuffleSlice(m.queue)
+
+        // Re-locate current track index after shuffle
+        if currentTrack != nil {
+            for i, t := range m.queue {
+                if t.ID == currentTrack.ID {
+                    m.currentIndex = i
+                    break
+                }
+            }
+        }
+
+        m.logMessage(fmt.Sprintf("Shuffle enabled - queue randomized (%d tracks)", len(m.queue)))
+    } else {
+        // Restore original order if available
+        if len(m.originalQueue) > 0 {
+            var currentTrack *models.Track
+            if m.currentIndex >= 0 && m.currentIndex < len(m.queue) {
+                ct := m.queue[m.currentIndex]
+                currentTrack = &ct
+            }
+
+            copy(m.queue, m.originalQueue)
+            // Trim in case sizes differ (shouldn't, but safe)
+            if len(m.queue) > len(m.originalQueue) {
+                m.queue = m.queue[:len(m.originalQueue)]
+            }
+
+            if currentTrack != nil {
+                for i, t := range m.queue {
+                    if t.ID == currentTrack.ID {
+                        m.currentIndex = i
+                        break
+                    }
+                }
+            }
+            m.originalQueue = nil
+        }
+        m.logMessage("Shuffle disabled - original order restored")
+    }
+
+    m.notifyStateChange()
+}
+
+// IsShuffleEnabled returns whether shuffle mode is enabled
+func (m *Manager) IsShuffleEnabled() bool {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    return m.shuffleMode
 }
 
 // notifyStateChange notifies the UI about state changes (must be called with lock held)

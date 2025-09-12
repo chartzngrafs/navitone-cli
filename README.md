@@ -154,7 +154,7 @@ navitone-cli/
 
 ## 🔧 Requirements
 
-- **Go 1.21+**
+- **Go 1.23+**
 - **MPV Media Player** - Install via your package manager (`sudo apt install mpv`, `brew install mpv`, etc.)
 - **Linux/macOS/Windows** - Cross-platform support via MPV
 - **Navidrome Server** (for music streaming)
@@ -165,6 +165,11 @@ navitone-cli/
 ```bash
 git clone https://github.com/yourusername/navitone-cli.git
 cd navitone-cli
+# Option A: Makefile helpers
+make build   # builds to bin/navitone
+./bin/navitone
+
+# Option B: go directly
 go build -o bin/navitone ./cmd/navitone
 ./bin/navitone
 ```
@@ -273,6 +278,17 @@ Notes:
 - When `method = "auto"` (default), Navitone uses server-side scrobbling if available for your user on Navidrome, and falls back to client-side if not configured or fails.
 - The Config tab displays a status line: “Server Scrobbling Enabled/Disabled” based on your Navidrome user profile.
 
+### Scrobbling Modes
+- `auto` (default): Try Navidrome server-side scrobbling; fall back to client services if needed.
+- `server`: Force server-side scrobbling via Navidrome; do not fall back.
+- `client`: Use Last.fm and/or ListenBrainz only (if enabled in config).
+- `disabled`: Don’t scrobble.
+
+### Theming
+- Themes: `dark` (default) and `light`.
+- Change via `[ui] theme = "dark" | "light"` in `config.toml`.
+- Palette highlights: Blue (headers), Aquamarine (active), Plum (errors), tuned for readability.
+
 ## 🧪 Development
 
 ### Setup
@@ -280,6 +296,11 @@ Notes:
 git clone https://github.com/yourusername/navitone-cli.git
 cd navitone-cli
 go mod tidy
+```
+
+### Run (development)
+```bash
+make run   # or: go run ./cmd/navitone
 ```
 
 ### Build

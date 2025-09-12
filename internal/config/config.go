@@ -154,16 +154,17 @@ func Load() (*Config, error) {
 
 // Save saves configuration to file
 func Save(config *Config) error {
-	configPath, err := GetConfigPath()
-	if err != nil {
-		return err
-	}
-	
-	file, err := os.Create(configPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
+    configPath, err := GetConfigPath()
+    if err != nil {
+        return err
+    }
+
+    // Use restrictive permissions; config contains credentials
+    file, err := os.OpenFile(configPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
 	
 	encoder := toml.NewEncoder(file)
 	return encoder.Encode(config)
