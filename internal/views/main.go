@@ -183,7 +183,7 @@ func (v *MainView) footerHint() string {
     case models.AlbumsTab:
         ctx = "Enter view • R Refresh • A queue"
     case models.ArtistsTab:
-        ctx = "Enter view • R Refresh"
+        ctx = "Enter view • R Refresh • A-Z jump to letter"
     case models.PlaylistsTab:
         ctx = "Enter view • R Refresh • A queue"
     case models.QueueTab:

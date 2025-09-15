@@ -1684,9 +1684,79 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		// Refresh artists
 		return a, a.loadArtists()
+	default:
+		// Alpha-jump navigation: press any letter to jump to first artist starting with that letter
+		if len(msg.String()) == 1 {
+			char := msg.String()[0]
+			if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') {
+				a.jumpToArtistByLetter(char)
+			}
+		}
 	}
 
 	return a, nil
+}
+
+// jumpToArtistByLetter jumps to the first artist starting with the given letter
+func (a *App) jumpToArtistByLetter(char byte) {
+	if len(a.state.Artists) == 0 {
+		return
+	}
+
+	// Convert to lowercase for case-insensitive comparison
+	targetChar := char
+	if char >= 'A' && char <= 'Z' {
+		targetChar = char + 32 // Convert to lowercase
+	}
+
+	// First, look for exact matches (artists that start with the target letter)
+	for i, artist := range a.state.Artists {
+		if len(artist.Name) == 0 {
+			continue
+		}
+		
+		firstChar := artist.Name[0]
+		// Convert artist name's first character to lowercase
+		if firstChar >= 'A' && firstChar <= 'Z' {
+			firstChar = firstChar + 32
+		}
+		
+		if firstChar == targetChar {
+			// Found exact match - jump to it
+			a.state.SelectedArtistIndex = i
+			a.loadCurrentArtwork()
+			
+			// Add a log message to show what happened
+			a.state.AddLogMessage(fmt.Sprintf("Jumped to '%c': %s", char, artist.Name))
+			return
+		}
+	}
+
+	// No exact match found, look for the next alphabetically closest artist
+	for i, artist := range a.state.Artists {
+		if len(artist.Name) == 0 {
+			continue
+		}
+		
+		firstChar := artist.Name[0]
+		// Convert artist name's first character to lowercase
+		if firstChar >= 'A' && firstChar <= 'Z' {
+			firstChar = firstChar + 32
+		}
+		
+		if firstChar > targetChar {
+			// Found first artist alphabetically after target letter
+			a.state.SelectedArtistIndex = i
+			a.loadCurrentArtwork()
+			
+			// Add a log message to show what happened
+			a.state.AddLogMessage(fmt.Sprintf("No '%c' artists, jumped to: %s", char, artist.Name))
+			return
+		}
+	}
+
+	// If no artist comes after the target letter, don't move
+	a.state.AddLogMessage(fmt.Sprintf("No artists found for '%c' or later", char))
 }
 
 // handlePlaylistsKeyPress handles keyboard input for the playlists tab
