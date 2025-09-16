@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/BurntSushi/toml"
 )
@@ -12,6 +14,7 @@ type Config struct {
 	Navidrome  NavidromeConfig  `toml:"navidrome"`
 	Audio      AudioConfig      `toml:"audio"`
 	UI         UIConfig         `toml:"ui"`
+	Theme      ThemeConfig      `toml:"theme"`
 	Scrobbling ScrobblingConfig `toml:"scrobbling"`
 }
 
@@ -39,11 +42,30 @@ type UIConfig struct {
     // AccentIndex allows users to choose an ANSI palette index (0-15) for active highlights.
     // Set to -1 to use reverse-video highlighting that adapts to terminal theme.
     AccentIndex    int               `toml:"accent_index"`
-    
+
     // ASCII Art quality settings
     ArtworkQuality string `toml:"artwork_quality"` // "low", "medium", "high", "ultra"
     ArtworkColor   bool   `toml:"artwork_color"`   // Enable colored ASCII art
     ArtworkSize    string `toml:"artwork_size"`    // "small", "medium", "large"
+}
+
+// ThemeConfig contains enhanced theming with Omarchy integration support
+type ThemeConfig struct {
+    Name       string            `toml:"name"`       // Theme name (e.g., "omarchy-dracula")
+    Source     string            `toml:"source"`     // "omarchy", "manual", or "builtin"
+    Colors     ThemeColors       `toml:"colors"`     // Rich color palette
+    Background string            `toml:"background"` // Background color
+    Foreground string            `toml:"foreground"` // Foreground color
+}
+
+// ThemeColors contains the rich color palette for enhanced theming
+type ThemeColors struct {
+    Accent    string `toml:"accent"`    // Primary accent color (headers, highlights)
+    Primary   string `toml:"primary"`   // Primary UI color (tabs, borders)
+    Secondary string `toml:"secondary"` // Secondary accent (selections, focus)
+    Success   string `toml:"success"`   // Success states (play, connected)
+    Warning   string `toml:"warning"`   // Warning states (loading, partial)
+    Error     string `toml:"error"`     // Error states (failed, disconnected)
 }
 
 // ScrobblingConfig contains scrobbling service settings
@@ -107,6 +129,20 @@ func DefaultConfig() *Config {
 				"stop": "ctrl+s",
 			},
 		},
+        Theme: ThemeConfig{
+            Name:   "builtin-dark",
+            Source: "builtin",
+            Colors: ThemeColors{
+                Accent:    "#6272a4", // Muted blue
+                Primary:   "#8be9fd", // Cyan
+                Secondary: "#ff79c6", // Pink
+                Success:   "#50fa7b", // Green
+                Warning:   "#f1fa8c", // Yellow
+                Error:     "#ff5555", // Red
+            },
+            Background: "#282a36", // Dark background
+            Foreground: "#f8f8f2", // Light foreground
+        },
         Scrobbling: ScrobblingConfig{
             Method: "auto",
             LastFM: LastFMConfig{
@@ -145,9 +181,9 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	config := DefaultConfig()
-	
+
 	// If config file doesn't exist, create it with defaults
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		if err := Save(config); err != nil {
@@ -155,14 +191,66 @@ func Load() (*Config, error) {
 		}
 		return config, nil
 	}
-	
-	// Load existing config
+
+	// Load existing config with error handling for type mismatches
 	_, err = toml.DecodeFile(configPath, config)
 	if err != nil {
-		return nil, err
+		// If there's a decode error, try to preserve critical settings and reset to defaults
+		fmt.Printf("Warning: Config decode error (%v), using defaults with preserved settings\n", err)
+
+		// Try to manually extract critical server settings
+		if serverConfig := extractServerConfig(configPath); serverConfig != nil {
+			config.Navidrome = *serverConfig
+		}
+
+		// Save corrected config
+		Save(config)
 	}
-	
+
 	return config, nil
+}
+
+// extractServerConfig manually extracts server settings from a potentially malformed config
+func extractServerConfig(configPath string) *NavidromeConfig {
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	serverConfig := &NavidromeConfig{}
+
+	// Simple line-by-line parsing to extract server settings
+	content := ""
+	buf := make([]byte, 1024)
+	for {
+		n, err := file.Read(buf)
+		if n > 0 {
+			content += string(buf[:n])
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	// Extract key server settings with regex
+	if matches := regexp.MustCompile(`server_url\s*=\s*["\']([^"\']+)["\']`).FindStringSubmatch(content); len(matches) > 1 {
+		serverConfig.ServerURL = matches[1]
+	}
+	if matches := regexp.MustCompile(`username\s*=\s*["\']([^"\']+)["\']`).FindStringSubmatch(content); len(matches) > 1 {
+		serverConfig.Username = matches[1]
+	}
+	if matches := regexp.MustCompile(`password\s*=\s*["\']([^"\']+)["\']`).FindStringSubmatch(content); len(matches) > 1 {
+		serverConfig.Password = matches[1]
+	}
+
+	// Only return if we found critical settings
+	if serverConfig.ServerURL != "" && serverConfig.Username != "" {
+		serverConfig.Timeout = 30 // Default timeout
+		return serverConfig
+	}
+
+	return nil
 }
 
 // Save saves configuration to file

@@ -122,8 +122,13 @@ func (m *Manager) Shutdown() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Stop event loop
-	close(m.stopEventLoop)
+	// Stop event loop (if not already stopped)
+	select {
+	case <-m.stopEventLoop:
+		// Already closed
+	default:
+		close(m.stopEventLoop)
+	}
 	m.eventWg.Wait()
 
 	// Stop MPV process

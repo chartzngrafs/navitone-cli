@@ -134,11 +134,19 @@ func (m *MPVProcess) Stop() error {
 		case <-time.After(5 * time.Second):
 			// Force kill after timeout
 			m.process.Process.Kill()
+			// Also kill process group to ensure cleanup of any child processes
+			if m.process.Process.Pid > 0 {
+				syscall.Kill(-m.process.Process.Pid, syscall.SIGKILL)
+			}
 			m.process.Wait()
 		}
 	} else {
 		// Immediate kill if signal failed
 		m.process.Process.Kill()
+		// Also kill process group to ensure cleanup of any child processes
+		if m.process.Process.Pid > 0 {
+			syscall.Kill(-m.process.Process.Pid, syscall.SIGKILL)
+		}
 		m.process.Wait()
 	}
 

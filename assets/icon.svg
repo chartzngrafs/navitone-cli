@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Carat ">" symbol -->
+  <path d="M8 6 L28 32 L8 58" fill="none" stroke="#4a9eff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Music note -->
+  <g>
+    <!-- Note stem -->
+    <rect x="48" y="8" width="3" height="36" fill="#4a9eff"/>
+    
+    <!-- Note head (oval rotated slightly) -->
+    <ellipse cx="44" cy="44" rx="6" ry="4" fill="#4a9eff" transform="rotate(-20 44 44)"/>
+    
+    <!-- Eighth note flag -->
+    <path d="M51 8 Q58 10 60 20 Q60 26 57 24 Q54 22 51 18 Z" fill="#4a9eff"/>
+  </g>
+</svg>

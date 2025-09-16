@@ -32,6 +32,31 @@ func NewMainView(state *models.AppState, themeVariant string, accentIndex int) *
     }
 }
 
+// NewMainViewWithTheme creates a new main view with enhanced theme config
+func NewMainViewWithTheme(state *models.AppState, themeConfig interface{}) *MainView {
+    theme := NewThemeFromConfig(themeConfig)
+    styles := NewThemedStyles(theme)
+
+    return &MainView{
+        state:  state,
+        theme:  theme,
+        styles: styles,
+        width:  80, // Default width
+        height: 24, // Default height
+    }
+}
+
+// NewMainViewWithDirectTheme creates a new main view with pre-built theme and styles
+func NewMainViewWithDirectTheme(state *models.AppState, theme Theme, styles ThemedStyles) *MainView {
+    return &MainView{
+        state:  state,
+        theme:  theme,
+        styles: styles,
+        width:  80, // Default width
+        height: 24, // Default height
+    }
+}
+
 // SetSize updates the view dimensions
 func (v *MainView) SetSize(width, height int) {
 	// Debug logging to track size changes
@@ -121,15 +146,16 @@ func (v *MainView) renderContent() string {
 		height = 24
 	}
 
-    // Compute content height accounting for header (1), footer (1), player (3), log (1),
+    // Compute content height accounting for header (1), footer (1), player (3), log (2),
     // and content box overhead (border top/bottom + padding top/bottom = 4)
-    contentHeight := height - 10
+    // We need to be more conservative to ensure content never exceeds terminal height
+    contentHeight := height - 12  // Increased from 10 to 12 for more conservative sizing
     contentWidth := width - 2
 	if contentWidth < 10 {
 		contentWidth = 10 // Minimum content width
 	}
-	if contentHeight < 5 {
-		contentHeight = 5 // Minimum content height
+	if contentHeight < 3 {
+		contentHeight = 3 // Reduced minimum to ensure it fits small terminals
 	}
 
 	content := v.styles.Content.
@@ -332,10 +358,35 @@ func (v *MainView) renderHomeTab() string {
 
     // Footer displays navigation instructions
 
-	// Render all four sections vertically
-	content.WriteString(v.renderHomeSections())
+	// Render all four sections vertically with height constraints
+	homeSections := v.renderHomeSections()
+	content.WriteString(homeSections)
 
-	return content.String()
+	// Ensure content fits within available height
+	fullContent := content.String()
+
+	// Get the content height that was calculated in renderContent()
+	contentHeight := v.height - 12
+	if contentHeight < 3 {
+		contentHeight = 3
+	}
+
+	// Split content into lines and truncate if necessary
+	lines := strings.Split(fullContent, "\n")
+
+	// Account for border and padding overhead (approximately 4 lines)
+	maxContentLines := contentHeight - 4
+	if maxContentLines < 1 {
+		maxContentLines = 1
+	}
+
+	if len(lines) > maxContentLines {
+		// Truncate and add scroll indicator
+		lines = lines[:maxContentLines-1]
+		lines = append(lines, "... (use ↑↓ to navigate sections)")
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // renderHomeSections renders all four home sections vertically with interactive navigation
@@ -348,16 +399,228 @@ func (v *MainView) renderHomeSections() string {
 		sectionWidth = 40
 	}
 
-	// Render all sections vertically
-	sections.WriteString(v.renderRecentlyAddedSection(sectionWidth))
+	// Calculate available height for sections (conservative approach)
+	availableHeight := v.height - 20 // Very conservative to ensure fit
+	if availableHeight < 10 {
+		availableHeight = 10
+	}
+
+	// Render all sections vertically with reduced item counts for small terminals
+	maxItemsPerSection := 3 // Reduced from 6/5/6/8 to be more conservative
+	if availableHeight > 25 {
+		maxItemsPerSection = 4 // Allow more items on larger terminals
+	}
+
+	sections.WriteString(v.renderRecentlyAddedSectionConstrained(sectionWidth, maxItemsPerSection))
 	sections.WriteString("\n")
-	sections.WriteString(v.renderTopArtistsSection(sectionWidth))
+	sections.WriteString(v.renderTopArtistsSectionConstrained(sectionWidth, maxItemsPerSection))
 	sections.WriteString("\n")
-	sections.WriteString(v.renderMostPlayedAlbumsSection(sectionWidth))
+	sections.WriteString(v.renderMostPlayedAlbumsSectionConstrained(sectionWidth, maxItemsPerSection))
 	sections.WriteString("\n")
-	sections.WriteString(v.renderTopTracksSection(sectionWidth))
+	sections.WriteString(v.renderTopTracksSectionConstrained(sectionWidth, maxItemsPerSection))
 
 	return sections.String()
+}
+
+// renderRecentlyAddedSectionConstrained renders the Recently Added Albums section with item limit
+func (v *MainView) renderRecentlyAddedSectionConstrained(width int, maxItems int) string {
+	var content strings.Builder
+	isActiveSection := v.state.HomeSelectedSection == 0
+
+	// Section title with indicator if active
+	title := "💿 Recently Added Albums"
+	if isActiveSection {
+		title = v.styles.ActiveSectionTitle.Render(title)
+	} else {
+		title = v.styles.SectionTitle.Render(title)
+	}
+	content.WriteString(title + "\n")
+
+	if len(v.state.RecentlyAddedAlbums) == 0 {
+		content.WriteString("  No albums loaded\n")
+		return content.String()
+	}
+
+	// Show albums with selection highlighting, constrained by maxItems
+	maxShow := maxItems
+	if len(v.state.RecentlyAddedAlbums) < maxShow {
+		maxShow = len(v.state.RecentlyAddedAlbums)
+	}
+
+	for i := 0; i < maxShow; i++ {
+		album := v.state.RecentlyAddedAlbums[i]
+		yearStr := ""
+		if album.Year > 0 {
+			yearStr = fmt.Sprintf(" (%d)", album.Year)
+		}
+
+		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
+		if isActiveSection && v.state.HomeSelectedIndex == i {
+			line = v.styles.ActiveField.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		content.WriteString(line + "\n")
+	}
+
+	if len(v.state.RecentlyAddedAlbums) > maxShow {
+		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.RecentlyAddedAlbums)-maxShow))
+	}
+
+	return content.String()
+}
+
+// renderTopArtistsSectionConstrained renders the Top Artists section with item limit
+func (v *MainView) renderTopArtistsSectionConstrained(width int, maxItems int) string {
+	var content strings.Builder
+	isActiveSection := v.state.HomeSelectedSection == 1
+
+	// Section title with indicator if active
+	title := "🎤 Top Artists"
+	if isActiveSection {
+		title = v.styles.ActiveSectionTitle.Render(title)
+	} else {
+		title = v.styles.SectionTitle.Render(title)
+	}
+	content.WriteString(title + "\n")
+
+	if len(v.state.TopArtistsByPlays) == 0 {
+		content.WriteString("  No artists loaded\n")
+		return content.String()
+	}
+
+	// Show artists with selection highlighting, constrained by maxItems
+	maxShow := maxItems
+	if len(v.state.TopArtistsByPlays) < maxShow {
+		maxShow = len(v.state.TopArtistsByPlays)
+	}
+
+	for i := 0; i < maxShow; i++ {
+		artist := v.state.TopArtistsByPlays[i]
+		star := ""
+		if artist.StarredAt != nil {
+			star = "★ "
+		}
+
+		albumText := "album"
+		if artist.AlbumCount != 1 {
+			albumText = "albums"
+		}
+
+		line := fmt.Sprintf("%s%s (%d %s)", star, artist.Name, artist.AlbumCount, albumText)
+		if isActiveSection && v.state.HomeSelectedIndex == i {
+			line = v.styles.ActiveField.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		content.WriteString(line + "\n")
+	}
+
+	if len(v.state.TopArtistsByPlays) > maxShow {
+		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.TopArtistsByPlays)-maxShow))
+	}
+
+	return content.String()
+}
+
+// renderMostPlayedAlbumsSectionConstrained renders the Most Played Albums section with item limit
+func (v *MainView) renderMostPlayedAlbumsSectionConstrained(width int, maxItems int) string {
+	var content strings.Builder
+	isActiveSection := v.state.HomeSelectedSection == 2
+
+	// Section title with indicator if active
+	title := "🔥 Most Played Albums"
+	if isActiveSection {
+		title = v.styles.ActiveSectionTitle.Render(title)
+	} else {
+		title = v.styles.SectionTitle.Render(title)
+	}
+	content.WriteString(title + "\n")
+
+	if len(v.state.MostPlayedAlbums) == 0 {
+		content.WriteString("  No albums loaded\n")
+		return content.String()
+	}
+
+	// Show albums with selection highlighting, constrained by maxItems
+	maxShow := maxItems
+	if len(v.state.MostPlayedAlbums) < maxShow {
+		maxShow = len(v.state.MostPlayedAlbums)
+	}
+
+	for i := 0; i < maxShow; i++ {
+		album := v.state.MostPlayedAlbums[i]
+		yearStr := ""
+		if album.Year > 0 {
+			yearStr = fmt.Sprintf(" (%d)", album.Year)
+		}
+
+		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
+		if isActiveSection && v.state.HomeSelectedIndex == i {
+			line = v.styles.ActiveField.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		content.WriteString(line + "\n")
+	}
+
+	if len(v.state.MostPlayedAlbums) > maxShow {
+		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.MostPlayedAlbums)-maxShow))
+	}
+
+	return content.String()
+}
+
+// renderTopTracksSectionConstrained renders the Top Tracks section with item limit
+func (v *MainView) renderTopTracksSectionConstrained(width int, maxItems int) string {
+	var content strings.Builder
+	isActiveSection := v.state.HomeSelectedSection == 3
+
+	// Section title with indicator if active
+	title := "🎵 Top Tracks"
+	if isActiveSection {
+		title = v.styles.ActiveSectionTitle.Render(title)
+	} else {
+		title = v.styles.SectionTitle.Render(title)
+	}
+	content.WriteString(title + "\n")
+
+	if len(v.state.TopTracks) == 0 {
+		content.WriteString("  No tracks loaded\n")
+		return content.String()
+	}
+
+	// Show tracks with selection highlighting, constrained by maxItems
+	maxShow := maxItems
+	if len(v.state.TopTracks) < maxShow {
+		maxShow = len(v.state.TopTracks)
+	}
+
+	for i := 0; i < maxShow; i++ {
+		track := v.state.TopTracks[i]
+
+		// Format duration (seconds to mm:ss)
+		duration := ""
+		if track.Duration > 0 {
+			minutes := track.Duration / 60
+			seconds := track.Duration % 60
+			duration = fmt.Sprintf(" [%d:%02d]", minutes, seconds)
+		}
+
+		line := fmt.Sprintf("%s - %s%s", track.Artist, track.Title, duration)
+		if isActiveSection && v.state.HomeSelectedIndex == i {
+			line = v.styles.ActiveField.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		content.WriteString(line + "\n")
+	}
+
+	if len(v.state.TopTracks) > maxShow {
+		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.TopTracks)-maxShow))
+	}
+
+	return content.String()
 }
 
 // renderRecentlyAddedSection renders the Recently Added Albums section
@@ -945,7 +1208,31 @@ func (v *MainView) renderConfigTab() string {
 		sections = append(sections, "")
 	}
 
-    return strings.Join(sections, "\n")
+    // Join all sections and ensure content fits within available height
+    fullContent := strings.Join(sections, "\n")
+
+    // Get the content height that was calculated in renderContent()
+    contentHeight := v.height - 12
+    if contentHeight < 3 {
+        contentHeight = 3
+    }
+
+    // Split content into lines and truncate if necessary
+    lines := strings.Split(fullContent, "\n")
+
+    // Account for border and padding overhead (approximately 4 lines)
+    maxContentLines := contentHeight - 4
+    if maxContentLines < 1 {
+        maxContentLines = 1
+    }
+
+    if len(lines) > maxContentLines {
+        // Truncate and add scroll indicator
+        lines = lines[:maxContentLines-1]
+        lines = append(lines, "... (content truncated - scroll to see more)")
+    }
+
+    return strings.Join(lines, "\n")
 }
 
 // renderConfigSection renders a section of configuration fields

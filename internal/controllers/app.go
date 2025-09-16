@@ -90,10 +90,43 @@ func NewApp() *App {
 	}
 
 
+    // Determine theme - fallback to legacy UI theme if enhanced theme is empty
+    var theme views.Theme
+
+    if cfg.Theme.Name != "" && cfg.Theme.Colors.Accent != "" {
+        // Enhanced theme system - use theme sync colors
+        colors := map[string]string{
+            "accent":    cfg.Theme.Colors.Accent,
+            "primary":   cfg.Theme.Colors.Primary,
+            "secondary": cfg.Theme.Colors.Secondary,
+            "success":   cfg.Theme.Colors.Success,
+            "warning":   cfg.Theme.Colors.Warning,
+            "error":     cfg.Theme.Colors.Error,
+        }
+
+        theme = views.NewThemeFromConfigStruct(
+            cfg.Theme.Name,
+            cfg.Theme.Source,
+            cfg.Theme.Background,
+            cfg.Theme.Foreground,
+            colors,
+        )
+    } else {
+        // Fallback to legacy UI theme system for users without theme sync
+        theme = views.NewTheme(cfg.UI.Theme, cfg.UI.AccentIndex)
+    }
+
+    styles := views.NewThemedStyles(theme)
+
     app := &App{
         state: state,
-        view:  views.NewMainView(state, cfg.UI.Theme, cfg.UI.AccentIndex),
+        view: &views.MainView{
+            // We'll set this up properly
+        },
     }
+
+    // Initialize the view with the proper theme
+    app.view = views.NewMainViewWithDirectTheme(state, theme, styles)
 
     // Initialize Navidrome client if config is valid
     app.initializeNavidromeClient()
@@ -175,6 +208,13 @@ func (a *App) cleanup() tea.Cmd {
 		a.audioManager.Close()
 	}
 	return tea.Quit
+}
+
+// Cleanup handles graceful shutdown of all resources (public version for external use)
+func (a *App) Cleanup() {
+	if a.audioManager != nil {
+		a.audioManager.Close()
+	}
 }
 
 // Init implements tea.Model
