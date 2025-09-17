@@ -8,11 +8,12 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 
 ## ✨ Key Features
 
-- **Intuitive TUI Interface** - Tab-based navigation with visual styling
-- **Navidrome Integration** - Full API support for streaming and library management  
+- **Enhanced Theming System** - Rich 8-color theming with Omarchy integration for desktop-synchronized colors
+- **Intuitive TUI Interface** - Tab-based navigation with comprehensive visual styling and themed components
+- **Navidrome Integration** - Full API support for streaming and library management
 - **MPV-Powered Audio** - Professional audio playback with universal format support
-- **Smart Navigation** - Modal-based browsing with intuitive keybindings
-- **Queue Management** - Complete playback controls with smart queue management
+- **Smart Navigation** - Modal-based browsing with intuitive keybindings and themed progress indicators
+- **Queue Management** - Complete playback controls with themed status indicators and progress bars
 - **Audio Visualizer** - Integrated Cava support with Shift+C hotkey for new terminal launch
 - **ASCII Album Art** - Display album artwork as ASCII art in Albums and Artists tabs
 - **Scrobbling Support** - Last.fm and ListenBrainz integration with offline queuing
@@ -20,15 +21,16 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 ## 🚀 Current Status
 
 ### ✅ Fully Implemented
+- **Enhanced Theming System** - Rich 8-color theming with 40+ styled components, progress bars, status indicators, and optional Omarchy desktop theme synchronization
 - **MPV Audio Backend** - Professional-grade audio with universal format support and perfect seeking
-- **Core Architecture** - MVC pattern with clean separation of concerns  
-- **Tab Navigation** - 6 tabs: Home, Albums, Artists, Playlists, Queue, Config
+- **Core Architecture** - MVC pattern with clean separation of concerns
+- **Tab Navigation** - 6 tabs: Home, Albums, Artists, Playlists, Queue, Config with themed styling
 - **Interactive Configuration** - Form-based config with field validation and connection testing
-- **Albums Tab** - Live browsing, modal track views, Alt+Enter quick queuing
+- **Albums Tab** - Live browsing, modal track views, Alt+Enter quick queuing with themed indicators
 - **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart queue integration
 - **Playlists Tab** - Complete playlist management with modal navigation, track-by-track playback, and queue integration
 - **Interactive Home Tab** - Enhanced with 4 interactive sections: Recently Added Albums, Top Artists, Most Played Albums, and Top Tracks with ↑↓ navigation and real play count data
-- **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking
+- **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking with themed progress bars
 - **Modal System** - Seamless navigation flow with context-aware controls across Albums, Artists, and Playlists
 - **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
 - **Enhanced Global Search** - Shift+F modal search with intelligent result limiting, pagination, and dual-mode playback
@@ -54,7 +56,7 @@ navitone-cli/
 ├── cmd/navitone/           # Application entry point
 ├── internal/
 │   ├── models/            # Data structures and types
-│   ├── views/             # UI rendering and styling
+│   ├── views/             # UI rendering and enhanced theming
 │   ├── controllers/       # Business logic and event handling
 │   ├── config/            # Configuration management
 │   ├── audio/             # Audio playback system
@@ -62,6 +64,7 @@ navitone-cli/
 ├── pkg/
 │   ├── navidrome/         # Reusable Navidrome client library
 │   └── scrobbling/        # Last.fm & ListenBrainz scrobbling clients
+├── theme-sync/            # Omarchy theme integration (optional)
 └── docs/                  # Documentation and planning
 ```
 
@@ -318,10 +321,43 @@ Notes:
 - `client`: Use Last.fm and/or ListenBrainz only (if enabled in config).
 - `disabled`: Don’t scrobble.
 
-### Theming
-- Themes: `dark` (default) and `light`.
-- Change via `[ui] theme = "dark" | "light"` in `config.toml`.
-- Palette highlights: Blue (headers), Aquamarine (active), Plum (errors), tuned for readability.
+### Enhanced Theming System
+
+#### Built-in Themes
+- **Rich Default Themes**: `dark` (default) and `light` with comprehensive 8-color palettes
+- **40+ Styled Components**: Progress bars, status indicators, content categories, interactive states
+- **Visual Hierarchy**: Semantic color coding for success/warning/error states, content differentiation
+
+#### Omarchy Desktop Integration (Optional)
+- **Real-time Theme Sync**: Automatically synchronizes with your Omarchy desktop theme
+- **Universal Theme Support**: Works with JSON and TOML theme formats from the entire Omarchy ecosystem
+- **Desktop Cohesion**: Your music player matches your desktop theme automatically
+- **Smart Color Mapping**: Omarchy colors intelligently mapped to Navitone UI elements
+
+#### Configuration
+```toml
+[ui]
+theme = "dark"  # Fallback theme for users without Omarchy
+
+[theme]  # Automatically populated by theme sync
+name = "omarchy-dracula"
+source = "omarchy"
+background = "#282a36"
+foreground = "#f8f8f2"
+[theme.colors]
+accent = "#6272a4"     # Headers, highlights
+primary = "#8be9fd"    # Tabs, borders
+secondary = "#ff79c6"  # Selections, focus
+success = "#50fa7b"    # Play states, connections
+warning = "#f1fa8c"    # Loading, partial states
+error = "#ff5555"      # Errors, disconnections
+```
+
+#### Setup Theme Sync (Optional)
+```bash
+cd theme-sync/
+./setup.sh  # Installs monitoring service for automatic theme updates
+```
 
 ## 🧪 Development
 
@@ -358,13 +394,14 @@ go build -o bin/navitone ./cmd/navitone
 ## 🎯 Roadmap
 
 ### Phase 1 (Core Functionality) - ✅ COMPLETE
+- [x] **Enhanced Theming System** - Rich 8-color theming with 40+ styled components and optional Omarchy desktop integration
 - [x] **MPV Audio Backend** - Complete replacement of custom decoders with professional MPV system
 - [x] **Interactive Configuration** - Forms with validation and connection testing
 - [x] **Navidrome Integration** - Full API support for streaming and library management
 - [x] **Albums Tab** - Modal track views with enhanced navigation and quick queuing
 - [x] **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart integration
 - [x] **Queue Management** - Complete playback controls with volume and seeking
-- [x] **Modal System** - Intuitive navigation flow with context-aware controls  
+- [x] **Modal System** - Intuitive navigation flow with context-aware controls
 - [x] **Enhanced Keybindings** - Clean, conventional shortcuts without vim-style navigation
 - [x] **Enhanced Global Search** - Shift+F modal with intelligent pagination, dual-mode playback, and smart result limiting
 - [x] **Interactive Home Tab** - Enhanced with 4 curated sections, seamless ↑↓ navigation, and real play count data integration
@@ -431,4 +468,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Note**: Phase 1 core functionality is **complete**! The application now features a professional MPV-powered audio backend with universal format support, intuitive modal navigation, smart queue management, and clean keybindings. Ready for daily use with any Navidrome server.
 
-**Latest Update**: ✅ **ASCII Album Art System Implementation** - Fully implemented configurable ASCII artwork display system. Features include: smart artwork display below album listings when selected, dual source support (Navidrome + MusicBrainz fallback), intelligent local caching system, responsive layout that adjusts item count for artwork space, config toggles for enable/disable and quality settings, and automatic play count aggregation for artists. The artwork system provides high-quality ASCII art conversion with multiple resolution and quality options, enhancing the visual experience while maintaining terminal compatibility.
+**Latest Update**: ✅ **Enhanced Theming System with Omarchy Integration** - Comprehensive theming overhaul featuring rich 8-color palettes, 40+ styled UI components, progress bars, status indicators, and content categorization. Optional Omarchy desktop integration provides real-time theme synchronization with automatic color extraction from JSON/TOML formats, desktop notifications, and intelligent color mapping. System includes graceful fallbacks for users without Omarchy, maintaining backward compatibility while providing enhanced visual experience for all users. Transforms Navitone from basic terminal utility to beautifully themed desktop-integrated music player.
