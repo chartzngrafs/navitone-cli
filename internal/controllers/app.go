@@ -970,65 +970,118 @@ func (a *App) handleHomeKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// getTotalHomeItems returns the total number of items across all home sections
+// getTotalHomeItems returns the total number of items across all home sections (limited to 4 per section)
 func (a *App) getTotalHomeItems() int {
-	return len(a.state.RecentlyAddedAlbums) + len(a.state.TopArtistsByPlays) + 
-		   len(a.state.MostPlayedAlbums) + len(a.state.TopTracks)
+	return a.getHomeItemsCount(0) + a.getHomeItemsCount(1) +
+		   a.getHomeItemsCount(2) + a.getHomeItemsCount(3)
+}
+
+// getHomeItemsCount returns the number of items to display for a given section (max 4)
+func (a *App) getHomeItemsCount(section int) int {
+	maxItems := 4
+	switch section {
+	case 0: // Recently Added Albums
+		if len(a.state.RecentlyAddedAlbums) < maxItems {
+			return len(a.state.RecentlyAddedAlbums)
+		}
+		return maxItems
+	case 1: // Top Artists
+		if len(a.state.TopArtistsByPlays) < maxItems {
+			return len(a.state.TopArtistsByPlays)
+		}
+		return maxItems
+	case 2: // Most Played Albums
+		if len(a.state.MostPlayedAlbums) < maxItems {
+			return len(a.state.MostPlayedAlbums)
+		}
+		return maxItems
+	case 3: // Top Tracks
+		if len(a.state.TopTracks) < maxItems {
+			return len(a.state.TopTracks)
+		}
+		return maxItems
+	default:
+		return 0
+	}
 }
 
 // getGlobalHomeIndex returns the global index across all sections
 func (a *App) getGlobalHomeIndex() int {
 	globalIndex := 0
-	
-	// Add items from sections before the current one
+
+	// Add items from sections before the current one (limited to 4 per section)
 	if a.state.HomeSelectedSection > 0 {
-		globalIndex += len(a.state.RecentlyAddedAlbums)
+		globalIndex += a.getHomeItemsCount(0) // Recently Added Albums
 	}
 	if a.state.HomeSelectedSection > 1 {
-		globalIndex += len(a.state.TopArtistsByPlays)
+		globalIndex += a.getHomeItemsCount(1) // Top Artists
 	}
 	if a.state.HomeSelectedSection > 2 {
-		globalIndex += len(a.state.MostPlayedAlbums)
+		globalIndex += a.getHomeItemsCount(2) // Most Played Albums
 	}
-	
+
 	// Add the current section index
 	globalIndex += a.state.HomeSelectedIndex
-	
+
 	return globalIndex
 }
 
 // setHomeSelectionFromGlobalIndex sets the section and index from a global index
 func (a *App) setHomeSelectionFromGlobalIndex(globalIndex int) {
 	currentIndex := 0
-	
-	// Section 0: Recently Added Albums
-	if globalIndex < currentIndex + len(a.state.RecentlyAddedAlbums) {
+
+	// Section 0: Recently Added Albums (limited to 4 items)
+	section0Count := a.getHomeItemsCount(0)
+	if globalIndex < currentIndex + section0Count {
 		a.state.HomeSelectedSection = 0
 		a.state.HomeSelectedIndex = globalIndex - currentIndex
+		// Ensure index doesn't exceed available items or 4-item limit
+		maxIndex := section0Count - 1
+		if a.state.HomeSelectedIndex > maxIndex {
+			a.state.HomeSelectedIndex = maxIndex
+		}
 		return
 	}
-	currentIndex += len(a.state.RecentlyAddedAlbums)
-	
-	// Section 1: Top Artists
-	if globalIndex < currentIndex + len(a.state.TopArtistsByPlays) {
+	currentIndex += section0Count
+
+	// Section 1: Top Artists (limited to 4 items)
+	section1Count := a.getHomeItemsCount(1)
+	if globalIndex < currentIndex + section1Count {
 		a.state.HomeSelectedSection = 1
 		a.state.HomeSelectedIndex = globalIndex - currentIndex
+		// Ensure index doesn't exceed available items or 4-item limit
+		maxIndex := section1Count - 1
+		if a.state.HomeSelectedIndex > maxIndex {
+			a.state.HomeSelectedIndex = maxIndex
+		}
 		return
 	}
-	currentIndex += len(a.state.TopArtistsByPlays)
-	
-	// Section 2: Most Played Albums
-	if globalIndex < currentIndex + len(a.state.MostPlayedAlbums) {
+	currentIndex += section1Count
+
+	// Section 2: Most Played Albums (limited to 4 items)
+	section2Count := a.getHomeItemsCount(2)
+	if globalIndex < currentIndex + section2Count {
 		a.state.HomeSelectedSection = 2
 		a.state.HomeSelectedIndex = globalIndex - currentIndex
+		// Ensure index doesn't exceed available items or 4-item limit
+		maxIndex := section2Count - 1
+		if a.state.HomeSelectedIndex > maxIndex {
+			a.state.HomeSelectedIndex = maxIndex
+		}
 		return
 	}
-	currentIndex += len(a.state.MostPlayedAlbums)
-	
-	// Section 3: Top Tracks
-	if globalIndex < currentIndex + len(a.state.TopTracks) {
+	currentIndex += section2Count
+
+	// Section 3: Top Tracks (limited to 4 items)
+	section3Count := a.getHomeItemsCount(3)
+	if globalIndex < currentIndex + section3Count {
 		a.state.HomeSelectedSection = 3
 		a.state.HomeSelectedIndex = globalIndex - currentIndex
+		// Ensure index doesn't exceed available items or 4-item limit
+		maxIndex := section3Count - 1
+		if a.state.HomeSelectedIndex > maxIndex {
+			a.state.HomeSelectedIndex = maxIndex
+		}
 		return
 	}
 }
@@ -1056,16 +1109,8 @@ func (a *App) moveHomeSelectionPageUp() {
 	if a.state.HomeSelectedIndex == 0 && a.state.HomeSelectedSection > 0 {
 		// Jump to previous section
 		a.state.HomeSelectedSection--
-		switch a.state.HomeSelectedSection {
-		case 0:
-			a.state.HomeSelectedIndex = len(a.state.RecentlyAddedAlbums) - 1
-		case 1:
-			a.state.HomeSelectedIndex = len(a.state.TopArtistsByPlays) - 1
-		case 2:
-			a.state.HomeSelectedIndex = len(a.state.MostPlayedAlbums) - 1
-		case 3:
-			a.state.HomeSelectedIndex = len(a.state.TopTracks) - 1
-		}
+		// Set to last item of the previous section (limited to 4 items)
+		a.state.HomeSelectedIndex = a.getHomeItemsCount(a.state.HomeSelectedSection) - 1
 		if a.state.HomeSelectedIndex < 0 {
 			a.state.HomeSelectedIndex = 0
 		}
@@ -1075,21 +1120,11 @@ func (a *App) moveHomeSelectionPageUp() {
 	}
 }
 
-// moveHomeSelectionPageDown moves selection down by sections or large jumps  
+// moveHomeSelectionPageDown moves selection down by sections or large jumps
 func (a *App) moveHomeSelectionPageDown() {
 	// Jump to the end of the current section, or next section if already at end
-	currentSectionSize := 0
-	switch a.state.HomeSelectedSection {
-	case 0:
-		currentSectionSize = len(a.state.RecentlyAddedAlbums)
-	case 1:
-		currentSectionSize = len(a.state.TopArtistsByPlays)
-	case 2:
-		currentSectionSize = len(a.state.MostPlayedAlbums)
-	case 3:
-		currentSectionSize = len(a.state.TopTracks)
-	}
-	
+	currentSectionSize := a.getHomeItemsCount(a.state.HomeSelectedSection)
+
 	if a.state.HomeSelectedIndex == currentSectionSize-1 && a.state.HomeSelectedSection < 3 {
 		// Jump to next section
 		a.state.HomeSelectedSection++

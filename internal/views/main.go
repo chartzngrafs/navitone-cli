@@ -405,11 +405,8 @@ func (v *MainView) renderHomeSections() string {
 		availableHeight = 10
 	}
 
-	// Render all sections vertically with reduced item counts for small terminals
-	maxItemsPerSection := 3 // Reduced from 6/5/6/8 to be more conservative
-	if availableHeight > 25 {
-		maxItemsPerSection = 4 // Allow more items on larger terminals
-	}
+	// Render all sections vertically with exactly 4 items each
+	maxItemsPerSection := 4 // Always show exactly 4 items per section
 
 	sections.WriteString(v.renderRecentlyAddedSectionConstrained(sectionWidth, maxItemsPerSection))
 	sections.WriteString("\n")
@@ -463,9 +460,7 @@ func (v *MainView) renderRecentlyAddedSectionConstrained(width int, maxItems int
 		content.WriteString(line + "\n")
 	}
 
-	if len(v.state.RecentlyAddedAlbums) > maxShow {
-		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.RecentlyAddedAlbums)-maxShow))
-	}
+	// No "more" indicator - always show exactly 4 items
 
 	return content.String()
 }
@@ -516,9 +511,7 @@ func (v *MainView) renderTopArtistsSectionConstrained(width int, maxItems int) s
 		content.WriteString(line + "\n")
 	}
 
-	if len(v.state.TopArtistsByPlays) > maxShow {
-		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.TopArtistsByPlays)-maxShow))
-	}
+	// No "more" indicator - always show exactly 4 items
 
 	return content.String()
 }
@@ -564,9 +557,7 @@ func (v *MainView) renderMostPlayedAlbumsSectionConstrained(width int, maxItems 
 		content.WriteString(line + "\n")
 	}
 
-	if len(v.state.MostPlayedAlbums) > maxShow {
-		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.MostPlayedAlbums)-maxShow))
-	}
+	// No "more" indicator - always show exactly 4 items
 
 	return content.String()
 }
@@ -616,9 +607,7 @@ func (v *MainView) renderTopTracksSectionConstrained(width int, maxItems int) st
 		content.WriteString(line + "\n")
 	}
 
-	if len(v.state.TopTracks) > maxShow {
-		content.WriteString(fmt.Sprintf("  ... %d more\n", len(v.state.TopTracks)-maxShow))
-	}
+	// No "more" indicator - always show exactly 4 items
 
 	return content.String()
 }
