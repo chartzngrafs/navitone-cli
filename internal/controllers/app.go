@@ -151,6 +151,12 @@ func NewApp() *App {
 			audioManager.SetLogCallback(app.logMessage)
 			// Set initial volume from config
 			audioManager.SetVolume(float64(cfg.Audio.Volume) / 100.0)
+			// Set audio device from config
+			if cfg.Audio.Device != "" {
+				if err := audioManager.SetAudioDevice(cfg.Audio.Device); err != nil {
+					app.logMessage(fmt.Sprintf("Failed to set audio device: %v", err))
+				}
+			}
 			app.logMessage("Audio manager initialized successfully")
 		} else {
 			app.logMessage(fmt.Sprintf("Failed to create audio manager: %v", err))
@@ -219,9 +225,18 @@ func (a *App) Cleanup() {
 
 // Init implements tea.Model
 func (a *App) Init() tea.Cmd {
+	var cmds []tea.Cmd
+
+	// Start the periodic update ticker
+	cmds = append(cmds, a.tick())
+
 	// Load initial data for the current tab
 	if a.state.CurrentTab == models.HomeTab && a.navidromeClient != nil {
-		return a.loadHomeData()
+		cmds = append(cmds, a.loadHomeData())
+	}
+
+	if len(cmds) > 0 {
+		return tea.Batch(cmds...)
 	}
 	return nil
 }
@@ -448,9 +463,25 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.LoadingError = ""
 		}
 		return a, nil
+
+	case TickMsg:
+		// Periodic UI refresh to update playback position, queue status, etc.
+		// This ensures the UI stays current even when the terminal is unfocused
+		a.updateAudioState(nil)
+		return a, a.tick()
 	}
 
 	return a, nil
+}
+
+// TickMsg represents a periodic update message
+type TickMsg time.Time
+
+// tick returns a command that sends a TickMsg after a short interval
+func (a *App) tick() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+		return TickMsg(t)
+	})
 }
 
 // View implements tea.Model

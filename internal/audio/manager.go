@@ -127,6 +127,11 @@ func (m *Manager) SetVolume(volume float64) {
 	m.mpvManager.SetVolume(volume)
 }
 
+// SetAudioDevice sets the audio output device
+func (m *Manager) SetAudioDevice(device string) error {
+	return m.mpvManager.SetAudioDevice(device)
+}
+
 // GetVolume returns the current playback volume (0.0 to 1.0)
 func (m *Manager) GetVolume() float64 {
 	return m.mpvManager.GetVolume()

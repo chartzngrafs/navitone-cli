@@ -418,6 +418,25 @@ func (m *Manager) SetVolume(volume float64) {
 	}
 }
 
+// SetAudioDevice sets the audio output device
+func (m *Manager) SetAudioDevice(device string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.commands != nil {
+		if device == "" {
+			device = "auto"
+		}
+		if err := m.commands.SetAudioDevice(device); err != nil {
+			m.logMessage(fmt.Sprintf("Failed to set audio device to %s: %v", device, err))
+			return err
+		} else {
+			m.logMessage(fmt.Sprintf("Set audio device to: %s", device))
+		}
+	}
+	return nil
+}
+
 // GetVolume returns the current playback volume
 func (m *Manager) GetVolume() float64 {
 	m.mu.RLock()
