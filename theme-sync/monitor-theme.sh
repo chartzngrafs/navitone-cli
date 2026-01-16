@@ -4,7 +4,9 @@
 # Watches for Omarchy theme changes and updates Navitone colors automatically
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-THEME_LINK="$HOME/.config/omarchy/current/theme"
+OMARCHY_CURRENT="$HOME/.config/omarchy/current"
+THEME_DIR="$OMARCHY_CURRENT/theme"
+THEME_NAME_FILE="$OMARCHY_CURRENT/theme.name"
 LOG_FILE="$SCRIPT_DIR/theme-monitor.log"
 COLOR_EXTRACTOR="$SCRIPT_DIR/extract-omarchy-colors.py"
 
@@ -57,37 +59,70 @@ update_theme() {
     fi
 }
 
+# Get current theme name (supports both old symlink and new theme.name file)
+get_theme_name() {
+    # New structure: read from theme.name file
+    if [ -f "$THEME_NAME_FILE" ]; then
+        cat "$THEME_NAME_FILE"
+        return
+    fi
+
+    # Old structure: get from symlink target
+    if [ -L "$THEME_DIR" ]; then
+        basename "$(readlink "$THEME_DIR")"
+        return
+    fi
+
+    # Fallback
+    echo "unknown"
+}
+
+# Check if theme exists (supports both old symlink and new directory)
+theme_exists() {
+    # New structure: theme is a directory
+    if [ -d "$THEME_DIR" ]; then
+        return 0
+    fi
+
+    # Old structure: theme is a symlink
+    if [ -L "$THEME_DIR" ]; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Main monitoring loop
 main() {
     echo "Starting Navitone Omarchy theme monitor..."
-    echo "Monitoring: $THEME_LINK"
+    echo "Monitoring: $OMARCHY_CURRENT"
     echo "Log file: $LOG_FILE"
 
     # Check dependencies
     check_dependencies
 
     # Initial theme sync
-    if [ -L "$THEME_LINK" ]; then
-        current_theme=$(basename "$(readlink "$THEME_LINK")")
+    if theme_exists; then
+        current_theme=$(get_theme_name)
         echo "Current theme: $current_theme"
         update_theme
     else
-        echo "Warning: Omarchy theme symlink not found at $THEME_LINK"
+        echo "Warning: Omarchy theme not found at $THEME_DIR"
         echo "Make sure Omarchy is installed and a theme is selected."
     fi
 
     # Start monitoring
     echo "Starting file system monitor..."
     while true; do
-        # Wait for changes to the theme symlink
-        inotifywait -e modify,move,create,delete -q "$HOME/.config/omarchy/current/" 2>/dev/null
+        # Wait for changes to the theme directory or theme.name file
+        inotifywait -e modify,move,create,delete -q "$OMARCHY_CURRENT/" 2>/dev/null
 
         # Small delay to avoid multiple rapid events
         sleep 0.5
 
-        # Check if theme link still exists and get new theme
-        if [ -L "$THEME_LINK" ]; then
-            new_theme=$(basename "$(readlink "$THEME_LINK")")
+        # Check if theme exists and get new theme name
+        if theme_exists; then
+            new_theme=$(get_theme_name)
             if [ "$new_theme" != "$current_theme" ]; then
                 current_theme="$new_theme"
                 echo "Theme changed to: $current_theme"

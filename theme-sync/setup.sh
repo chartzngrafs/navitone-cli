@@ -21,14 +21,27 @@ check_omarchy() {
         exit 1
     fi
 
-    if [ ! -L "$HOME/.config/omarchy/current/theme" ]; then
+    # Support both new (directory + theme.name) and old (symlink) Omarchy structures
+    local theme_dir="$HOME/.config/omarchy/current/theme"
+    local theme_name_file="$HOME/.config/omarchy/current/theme.name"
+
+    if [ -d "$theme_dir" ]; then
+        # New structure: theme is a directory
+        if [ -f "$theme_name_file" ]; then
+            current_theme=$(cat "$theme_name_file")
+        else
+            current_theme="current"
+        fi
+        echo "✅ Omarchy installed with current theme: $current_theme"
+    elif [ -L "$theme_dir" ]; then
+        # Old structure: theme is a symlink
+        current_theme=$(basename "$(readlink "$theme_dir")")
+        echo "✅ Omarchy installed with current theme: $current_theme"
+    else
         echo "⚠️  No current theme selected in Omarchy"
         echo "Please select a theme in Omarchy first, then run this setup again"
         exit 1
     fi
-
-    current_theme=$(basename "$(readlink "$HOME/.config/omarchy/current/theme")")
-    echo "✅ Omarchy installed with current theme: $current_theme"
 }
 
 # Check dependencies

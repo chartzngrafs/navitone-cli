@@ -73,10 +73,47 @@ def simple_toml_load(f):
     return data
 
 def get_current_theme_path():
-    """Get the path to the current Omarchy theme."""
-    current_theme_link = Path.home() / '.config' / 'omarchy' / 'current' / 'theme'
-    if current_theme_link.exists() and current_theme_link.is_symlink():
-        return Path(current_theme_link.readlink())
+    """Get the path to the current Omarchy theme.
+
+    Supports both old (symlink) and new (directory) Omarchy structures:
+    - Old: ~/.config/omarchy/current/theme is a symlink to the theme directory
+    - New: ~/.config/omarchy/current/theme is a directory containing theme files
+    """
+    current_theme_path = Path.home() / '.config' / 'omarchy' / 'current' / 'theme'
+
+    # New structure: theme is a directory
+    if current_theme_path.exists() and current_theme_path.is_dir():
+        return current_theme_path
+
+    # Old structure: theme is a symlink
+    if current_theme_path.exists() and current_theme_path.is_symlink():
+        return Path(current_theme_path.readlink())
+
+    return None
+
+
+def get_current_theme_name():
+    """Get the name of the current Omarchy theme.
+
+    Supports both old (symlink) and new (theme.name file) Omarchy structures.
+    """
+    # New structure: read from theme.name file
+    theme_name_file = Path.home() / '.config' / 'omarchy' / 'current' / 'theme.name'
+    if theme_name_file.exists():
+        try:
+            return theme_name_file.read_text().strip()
+        except Exception:
+            pass
+
+    # Old structure: get from symlink target
+    current_theme_path = Path.home() / '.config' / 'omarchy' / 'current' / 'theme'
+    if current_theme_path.exists() and current_theme_path.is_symlink():
+        return Path(current_theme_path.readlink()).name
+
+    # Fallback: use directory name if theme is a directory
+    if current_theme_path.exists() and current_theme_path.is_dir():
+        return "current"
+
     return None
 
 def parse_toml_colors(toml_path):
@@ -156,11 +193,93 @@ def parse_toml_colors(toml_path):
 
     return colors, primary_colors
 
+def parse_colors_toml(colors_path):
+    """Parse the new Omarchy colors.toml format.
+
+    The new format has a simpler structure with direct color assignments:
+    accent = "#e68e0d"
+    foreground = "#bebebe"
+    background = "#121212"
+    color0 = "#333333" (black)
+    color1 = "#D35F5F" (red)
+    color2 = "#FFC107" (green)
+    ...
+    """
+    colors = {}
+    background = '#282a36'
+    foreground = '#f8f8f2'
+
+    try:
+        with open(colors_path, 'r') as f:
+            content = f.read()
+
+        for line in content.split('\n'):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            if '=' in line:
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip().strip('"\'')
+
+                # Extract hex color
+                hex_match = re.search(r'#([a-fA-F0-9]{6})', value)
+                if hex_match:
+                    clean_color = '#' + hex_match.group(1)
+
+                    if key == 'background':
+                        background = clean_color
+                    elif key == 'foreground':
+                        foreground = clean_color
+                    elif key == 'accent':
+                        colors['accent'] = clean_color
+                    elif key == 'color1':  # red
+                        colors['red'] = clean_color
+                    elif key == 'color2':  # green
+                        colors['green'] = clean_color
+                    elif key == 'color3':  # yellow
+                        colors['yellow'] = clean_color
+                    elif key == 'color4':  # blue
+                        colors['blue'] = clean_color
+                    elif key == 'color5':  # magenta
+                        colors['magenta'] = clean_color
+                    elif key == 'color6':  # cyan
+                        colors['cyan'] = clean_color
+
+        return colors, background, foreground
+
+    except Exception as e:
+        print(f"Error parsing colors.toml: {e}")
+        return None, background, foreground
+
+
 def extract_theme_colors(theme_path):
     """Extract relevant colors from the Omarchy theme."""
-    theme_name = theme_path.name
+    theme_name = get_current_theme_name() or theme_path.name
 
-    # First try to read from custom_theme.json
+    # First try to read from colors.toml (new Omarchy format)
+    colors_toml_path = theme_path / 'colors.toml'
+    if colors_toml_path.exists():
+        parsed_colors, background, foreground = parse_colors_toml(colors_toml_path)
+        if parsed_colors:
+            # Map to Navitone color scheme
+            colors = {
+                'accent': parsed_colors.get('accent', parsed_colors.get('blue', '#6272a4')),
+                'primary': parsed_colors.get('cyan', parsed_colors.get('blue', '#8be9fd')),
+                'secondary': parsed_colors.get('magenta', '#ff79c6'),
+                'success': parsed_colors.get('green', '#50fa7b'),
+                'warning': parsed_colors.get('yellow', '#f1fa8c'),
+                'error': parsed_colors.get('red', '#ff5555'),
+            }
+            return {
+                'theme_name': theme_name,
+                'colors': colors,
+                'background': background,
+                'foreground': foreground
+            }
+
+    # Next try to read from custom_theme.json
     theme_json_path = theme_path / 'custom_theme.json'
     if theme_json_path.exists():
         try:
@@ -370,7 +489,7 @@ def main():
         print("Could not find current Omarchy theme")
         sys.exit(1)
 
-    theme_name = theme_path.name
+    theme_name = get_current_theme_name() or theme_path.name
     print(f"Current theme: {theme_name}")
 
     # Extract colors from theme
