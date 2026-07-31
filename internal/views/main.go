@@ -57,6 +57,12 @@ func NewMainViewWithDirectTheme(state *models.AppState, theme Theme, styles Them
     }
 }
 
+// SetTheme updates the active theme and component styles
+func (v *MainView) SetTheme(theme Theme, styles ThemedStyles) {
+	v.theme = theme
+	v.styles = styles
+}
+
 // SetSize updates the view dimensions
 func (v *MainView) SetSize(width, height int) {
 	// Debug logging to track size changes
@@ -127,10 +133,16 @@ func (v *MainView) renderHeader() string {
         if i == v.state.CurrentTab { style = v.styles.TabActive }
         tabs = append(tabs, style.Render(i.String()))
     }
-    pills := strings.Join(tabs, "")
+    pills := strings.Join(tabs, " ")
     headerWidth := v.width
     if headerWidth <= 0 { headerWidth = 80 }
-    return v.styles.Header.Width(headerWidth).Render(pills)
+
+    headerStr := v.styles.Header.Width(headerWidth).Render(pills)
+    if v.state.EnableGradientBorder {
+        accentLine := RenderGradientLine(headerWidth, v.state.AnimTick, v.theme)
+        return headerStr + "\n" + accentLine
+    }
+    return headerStr
 }
 
 // renderContent creates the main content area based on current tab
@@ -145,8 +157,11 @@ func (v *MainView) renderContent() string {
 		height = 24
 	}
 
-    // Compute content height dynamically accounting for header (1), content borders (2), and controlBar (5)
+    // Compute content height dynamically accounting for header (1 or 2 with accent line), content borders (2), and controlBar (5)
     overhead := 8
+    if v.state.EnableGradientBorder {
+        overhead = 9
+    }
     contentHeight := height - overhead
     contentWidth := width - 2
 	if contentWidth < 10 {
@@ -156,28 +171,58 @@ func (v *MainView) renderContent() string {
 		contentHeight = 3 // Minimum content height for small terminals
 	}
 
+	var rawContent string
+	switch v.state.CurrentTab {
+	case models.HomeTab:
+		rawContent = v.renderHomeTab()
+	case models.AlbumsTab:
+		rawContent = v.renderAlbumsTab()
+	case models.ArtistsTab:
+		rawContent = v.renderArtistsTab()
+	case models.PlaylistsTab:
+		rawContent = v.renderPlaylistsTab()
+	case models.RadioTab:
+		rawContent = v.renderRadioTab()
+	case models.QueueTab:
+		rawContent = v.renderQueueTab()
+	case models.ConfigTab:
+		rawContent = v.renderConfigTab()
+	default:
+		rawContent = "Unknown tab"
+	}
+
+	// Render integrated in-app Cava visualizer spanning the bottom of the main box up to 14 rows height
+	if v.state.ShowCavaVisualizer {
+		cavaHeight := 14
+		if cavaHeight > contentHeight-3 {
+			cavaHeight = contentHeight - 3
+		}
+		if cavaHeight >= 3 {
+			maxTabLines := contentHeight - cavaHeight - 1
+			if maxTabLines < 2 {
+				maxTabLines = 2
+			}
+
+			rawLines := strings.Split(rawContent, "\n")
+			if len(rawLines) > maxTabLines {
+				rawLines = rawLines[:maxTabLines]
+			}
+			for len(rawLines) < maxTabLines {
+				rawLines = append(rawLines, "")
+			}
+			cavaStr := RenderInAppCava(contentWidth, cavaHeight, v.state.CavaBars, v.state.AnimTick, v.state.IsPlaying, v.theme)
+			rawContent = strings.Join(rawLines, "\n") + "\n" + cavaStr
+		}
+	}
+
+	if v.state.EnableGradientBorder {
+		return RenderGradientBox(rawContent, width, contentHeight+2, v.state.AnimTick, v.theme)
+	}
+
 	content := v.styles.Content.
 		Width(contentWidth).
 		Height(contentHeight)
-
-	switch v.state.CurrentTab {
-	case models.HomeTab:
-		return content.Render(v.renderHomeTab())
-	case models.AlbumsTab:
-		return content.Render(v.renderAlbumsTab())
-	case models.ArtistsTab:
-		return content.Render(v.renderArtistsTab())
-	case models.PlaylistsTab:
-		return content.Render(v.renderPlaylistsTab())
-	case models.RadioTab:
-		return content.Render(v.renderRadioTab())
-	case models.QueueTab:
-		return content.Render(v.renderQueueTab())
-	case models.ConfigTab:
-		return content.Render(v.renderConfigTab())
-	default:
-		return content.Render("Unknown tab")
-	}
+	return content.Render(rawContent)
 }
 
 
@@ -209,13 +254,21 @@ func (v *MainView) formatRow(left string, right string, selected bool, leading s
         if rem < 0 { rem = 0 }
         line := prefix + leading + leftText + strings.Repeat(" ", rem+1) + rightText
         if selected {
+            if v.state.EnableGradientBorder {
+                return ApplySelectionShimmer(line, selected, v.state.AnimTick, v.theme)
+            }
             return v.styles.ActiveField.Render(line)
         }
         return line
     }
 
     content := prefix + leading + v.truncateToWidth(leftText, maxLine-baseWidth)
-    if selected { return v.styles.ActiveField.Render(content) }
+    if selected {
+        if v.state.EnableGradientBorder {
+            return ApplySelectionShimmer(content, selected, v.state.AnimTick, v.theme)
+        }
+        return v.styles.ActiveField.Render(content)
+    }
     return content
 }
 
@@ -411,7 +464,11 @@ func (v *MainView) renderRecentlyAddedSectionConstrained(width int, maxItems int
 
 		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
-			line = v.styles.ActiveField.Render("> " + line)
+			if v.state.EnableGradientBorder {
+				line = ApplySelectionShimmer("> "+line, true, v.state.AnimTick, v.theme)
+			} else {
+				line = v.styles.ActiveField.Render("> " + line)
+			}
 		} else {
 			line = "  " + line
 		}
@@ -462,7 +519,11 @@ func (v *MainView) renderTopArtistsSectionConstrained(width int, maxItems int) s
 
 		line := fmt.Sprintf("%s%s (%d %s)", star, artist.Name, artist.AlbumCount, albumText)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
-			line = v.styles.ActiveField.Render("> " + line)
+			if v.state.EnableGradientBorder {
+				line = ApplySelectionShimmer("> "+line, true, v.state.AnimTick, v.theme)
+			} else {
+				line = v.styles.ActiveField.Render("> " + line)
+			}
 		} else {
 			line = "  " + line
 		}
@@ -508,7 +569,11 @@ func (v *MainView) renderMostPlayedAlbumsSectionConstrained(width int, maxItems 
 
 		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
-			line = v.styles.ActiveField.Render("> " + line)
+			if v.state.EnableGradientBorder {
+				line = ApplySelectionShimmer("> "+line, true, v.state.AnimTick, v.theme)
+			} else {
+				line = v.styles.ActiveField.Render("> " + line)
+			}
 		} else {
 			line = "  " + line
 		}
@@ -558,7 +623,11 @@ func (v *MainView) renderTopTracksSectionConstrained(width int, maxItems int) st
 
 		line := fmt.Sprintf("%s - %s%s", track.Artist, track.Title, duration)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
-			line = v.styles.ActiveField.Render("> " + line)
+			if v.state.EnableGradientBorder {
+				line = ApplySelectionShimmer("> "+line, true, v.state.AnimTick, v.theme)
+			} else {
+				line = v.styles.ActiveField.Render("> " + line)
+			}
 		} else {
 			line = "  " + line
 		}
@@ -604,7 +673,11 @@ func (v *MainView) renderRecentlyAddedSection(width int) string {
 
 		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
-			line = v.styles.ActiveField.Render("> " + line)
+			if v.state.EnableGradientBorder {
+				line = ApplySelectionShimmer("> "+line, true, v.state.AnimTick, v.theme)
+			} else {
+				line = v.styles.ActiveField.Render("> " + line)
+			}
 		} else {
 			line = "  " + line
 		}
@@ -657,7 +730,11 @@ func (v *MainView) renderTopArtistsSection(width int) string {
 
 		line := fmt.Sprintf("%s%s (%d %s)", star, artist.Name, artist.AlbumCount, albumText)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
-			line = v.styles.ActiveField.Render("> " + line)
+			if v.state.EnableGradientBorder {
+				line = ApplySelectionShimmer("> "+line, true, v.state.AnimTick, v.theme)
+			} else {
+				line = v.styles.ActiveField.Render("> " + line)
+			}
 		} else {
 			line = "  " + line
 		}
@@ -705,7 +782,11 @@ func (v *MainView) renderMostPlayedAlbumsSection(width int) string {
 
 		line := fmt.Sprintf("%s - %s%s", album.Artist, album.Name, yearStr)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
-			line = v.styles.ActiveField.Render("> " + line)
+			if v.state.EnableGradientBorder {
+				line = ApplySelectionShimmer("> "+line, true, v.state.AnimTick, v.theme)
+			} else {
+				line = v.styles.ActiveField.Render("> " + line)
+			}
 		} else {
 			line = "  " + line
 		}
@@ -757,7 +838,11 @@ func (v *MainView) renderTopTracksSection(width int) string {
 
 		line := fmt.Sprintf("%s - %s%s", track.Artist, track.Title, duration)
 		if isActiveSection && v.state.HomeSelectedIndex == i {
-			line = v.styles.ActiveField.Render("> " + line)
+			if v.state.EnableGradientBorder {
+				line = ApplySelectionShimmer("> "+line, true, v.state.AnimTick, v.theme)
+			} else {
+				line = v.styles.ActiveField.Render("> " + line)
+			}
 		} else {
 			line = "  " + line
 		}
@@ -1459,21 +1544,21 @@ func (v *MainView) controlBarHotkeys() string {
 	}
 	switch v.state.CurrentTab {
 	case models.HomeTab:
-		return "Enter Select • Shift+Enter Queue • Shift+R Refresh • / Search • Shift+Z Zen"
+		return "Enter Select • Shift+Enter Queue • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
 	case models.AlbumsTab:
-		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+Z Zen"
+		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
 	case models.ArtistsTab:
-		return "Enter Albums • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+Z Zen"
+		return "Enter Albums • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
 	case models.PlaylistsTab:
-		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+Z Zen"
+		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
 	case models.RadioTab:
-		return "Enter Play • A Queue • Shift+R Refresh • / Search • Shift+Z Zen"
+		return "Enter Play • A Queue • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
 	case models.QueueTab:
-		return "Space Play • Alt+←/→ Skip • Shift+↑/↓ Vol • X Del • C Clear • Shift+Z Zen"
+		return "Space Play • Alt+←/→ Skip • Shift+↑/↓ Vol • X Del • C Clear • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
 	case models.ConfigTab:
-		return "Enter Edit • F2 Save • F3 Test • Shift+Z Zen"
+		return "Enter Edit • F2 Save • F3 Test • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
 	default:
-		return "Space Play • Alt+←/→ Skip • / Search • Shift+Z Zen • q Quit"
+		return "Space Play • Alt+←/→ Skip • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair • q Quit"
 	}
 }
 
@@ -1498,10 +1583,24 @@ func (v *MainView) renderCustomProgressBar(width int) string {
 		filledSegments = width
 	}
 
-	barFilled := strings.Repeat("▓", filledSegments)
-	barEmpty := strings.Repeat("░", width-filledSegments)
+	var styledFill string
+	if v.state.EnableGradientBorder && filledSegments > 0 {
+		var filledBuilder strings.Builder
+		totalSteps := width
+		if totalSteps < 50 {
+			totalSteps = 50 // Ensure smooth gradient interpolation matching footer bar
+		}
+		for x := 0; x < filledSegments; x++ {
+			c := GetGradientColor(x, totalSteps, v.state.AnimTick, v.theme)
+			filledBuilder.WriteString(lipgloss.NewStyle().Foreground(c).Bold(true).Render("▓"))
+		}
+		styledFill = filledBuilder.String()
+	} else {
+		barFilled := strings.Repeat("▓", filledSegments)
+		styledFill = v.styles.ProgressFill.Render(barFilled)
+	}
 
-	styledFill := v.styles.ProgressFill.Render(barFilled)
+	barEmpty := strings.Repeat("░", width-filledSegments)
 	styledEmpty := v.styles.ProgressBar.Render(barEmpty)
 
 	return "[" + styledFill + styledEmpty + "]"
@@ -1974,7 +2073,7 @@ func (v *MainView) renderAlbumArtwork() string {
 func (v *MainView) renderZenMode() string {
 	var zenParts []string
 
-	// 1. Album Artwork (Color)
+	// 1. Album Artwork (Color) with Animated Gradient Box
 	var artContent string
 	if v.state.LoadingArtwork {
 		artContent = "⏳ Loading artwork..."
@@ -1983,14 +2082,44 @@ func (v *MainView) renderZenMode() string {
 	} else {
 		artContent = "[ No Album Art Available ]"
 	}
-	zenParts = append(zenParts, artContent)
+
+	artLines := strings.Split(artContent, "\n")
+	artWidth := 0
+	for _, l := range artLines {
+		w := lipgloss.Width(l)
+		if w > artWidth {
+			artWidth = w
+		}
+	}
+	if artWidth < 26 {
+		artWidth = 26
+	}
+	artHeight := len(artLines)
+
+	var framedArt string
+	if v.state.EnableGradientBorder {
+		framedArt = RenderGradientBox(artContent, artWidth+4, artHeight+2, v.state.AnimTick, v.theme)
+	} else {
+		framedArt = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(v.theme.Primary).
+			Padding(0, 1).
+			Render(artContent)
+	}
+	zenParts = append(zenParts, framedArt)
 
 	boldStyle := lipgloss.NewStyle().Bold(true)
 
 	// 2. Track & Playing Info
 	var infoLines []string
 	if v.state.CurrentTrack != nil {
-		trackTitle := boldStyle.Render("🎵 " + v.state.CurrentTrack.Title)
+		var trackTitle string
+		if v.state.EnableGradientBorder {
+			trackTitle = "🎵 " + RenderGradientText(v.state.CurrentTrack.Title, v.state.AnimTick, v.theme)
+		} else {
+			trackTitle = boldStyle.Render("🎵 " + v.state.CurrentTrack.Title)
+		}
+
 		artistAlbum := fmt.Sprintf("👤 %s", v.state.CurrentTrack.Artist)
 		if v.state.CurrentTrack.Album != "" {
 			artistAlbum += fmt.Sprintf(" • 💿 %s", v.state.CurrentTrack.Album)
@@ -2007,7 +2136,11 @@ func (v *MainView) renderZenMode() string {
 		if alb.Year > 0 {
 			albInfo += fmt.Sprintf(" (%d)", alb.Year)
 		}
-		infoLines = append(infoLines, boldStyle.Render(albInfo))
+		if v.state.EnableGradientBorder {
+			infoLines = append(infoLines, "💿 "+RenderGradientText(alb.Artist+" • "+alb.Name, v.state.AnimTick, v.theme))
+		} else {
+			infoLines = append(infoLines, boldStyle.Render(albInfo))
+		}
 	}
 	if len(infoLines) > 0 {
 		zenParts = append(zenParts, strings.Join(infoLines, "\n"))
@@ -2043,13 +2176,17 @@ func (v *MainView) renderZenMode() string {
 		currentSec := int(v.state.Position.Seconds())
 		totalSec := v.state.CurrentTrack.Duration
 		timeStr := fmt.Sprintf("%02d:%02d / %02d:%02d", currentSec/60, currentSec%60, totalSec/60, totalSec%60)
-		progressBar := v.renderProgressBar()
+		zenBarWidth := artWidth
+		if zenBarWidth < 36 {
+			zenBarWidth = 36
+		}
+		progressBar := v.renderCustomProgressBar(zenBarWidth)
 		progressLines = append(progressLines, fmt.Sprintf("%s %s", timeStr, progressBar))
 	}
 	zenParts = append(zenParts, strings.Join(progressLines, "\n"))
 
 	// 4. Subtle Zen Mode key hint
-	hint := v.styles.HelpText.Render("Shift+Z Exit Zen Mode • Space Play/Pause • Alt+←/→ Skip • Shift+↑/↓ Volume")
+	hint := v.styles.HelpText.Render("Shift+Z Exit Zen Mode • Shift+G Flair • Space Play/Pause • Alt+←/→ Skip • Shift+↑/↓ Volume")
 	zenParts = append(zenParts, hint)
 
 	// Combine into a clean centered layout block

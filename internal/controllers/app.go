@@ -14,7 +14,6 @@ import (
 	"navitone-cli/internal/audio"
 	"navitone-cli/internal/config"
 	"navitone-cli/internal/models"
-	"navitone-cli/internal/utils"
 	"navitone-cli/internal/views"
 	"navitone-cli/pkg/navidrome"
 	"navitone-cli/pkg/scrobbling"
@@ -88,6 +87,12 @@ func NewApp() *App {
 		CurrentArtwork:      "",
 		LoadingArtwork:      false,
 		ShowArtwork:         cfg.UI.ShowAlbumArt,
+		
+		// Initialize Visual Flair & Cava state
+		EnableGradientBorder: cfg.UI.GradientBorder,
+		AnimTick:             0,
+		ShowCavaVisualizer:   cfg.UI.CavaVisualizer,
+		CavaBars:             make([]int, 0),
 	}
 
 
@@ -178,6 +183,11 @@ func NewApp() *App {
 	// Update artwork display state based on config
 	app.updateArtworkDisplayState()
 
+	// Start background Cava pipe if visualizer is enabled by default
+	if app.state.ShowCavaVisualizer {
+		app.startCavaPipe()
+	}
+
 	app.logMessage("Navitone started successfully")
 	
 	return app
@@ -225,6 +235,7 @@ func (a *App) logMessage(message string) {
 
 // cleanup handles graceful shutdown of all resources
 func (a *App) cleanup() tea.Cmd {
+	a.stopCavaPipe()
 	if a.audioManager != nil {
 		a.audioManager.Close()
 	}
@@ -233,6 +244,7 @@ func (a *App) cleanup() tea.Cmd {
 
 // Cleanup handles graceful shutdown of all resources (public version for external use)
 func (a *App) Cleanup() {
+	a.stopCavaPipe()
 	if a.audioManager != nil {
 		a.audioManager.Close()
 	}
@@ -492,8 +504,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case TickMsg:
-		// Periodic UI refresh to update playback position, queue status, etc.
-		// This ensures the UI stays current even when the terminal is unfocused
+		// Periodic UI refresh to update playback position, animation frame, queue status, etc.
+		if a.state != nil {
+			a.state.AnimTick++
+		}
 		a.updateAudioState(nil)
 		return a, a.tick()
 	}
@@ -506,7 +520,15 @@ type TickMsg time.Time
 
 // tick returns a command that sends a TickMsg after a short interval
 func (a *App) tick() tea.Cmd {
-	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+	interval := 500 * time.Millisecond
+	if a.state != nil {
+		if a.state.ShowCavaVisualizer {
+			interval = 16 * time.Millisecond // 60 FPS ultra-responsive Cava visualizer
+		} else if a.state.EnableGradientBorder {
+			interval = 40 * time.Millisecond // 25 FPS smooth flair animation
+		}
+	}
+	return tea.Tick(interval, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
 }
@@ -528,8 +550,16 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleConfigKeyPress(msg)
 	}
 
-	// Handle global player controls FIRST (before tab-specific handlers)
 	switch msg.String() {
+	case "G", "shift+g":
+		// Global: Toggle moving gradient and visual flair
+		a.state.EnableGradientBorder = !a.state.EnableGradientBorder
+		status := "enabled"
+		if !a.state.EnableGradientBorder {
+			status = "disabled"
+		}
+		a.logMessage(fmt.Sprintf("Visual Flair %s", status))
+		return a, a.tick()
 	case " ":
 		// Global: Space bar Play/Pause toggle
 		if a.audioManager != nil {
@@ -642,13 +672,9 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "shift+c", "C":
-		// Global: Shift+C - Launch Cava audio visualizer in new terminal
-		if err := utils.LaunchCavaInTerminal(); err != nil {
-			a.logMessage(fmt.Sprintf("Failed to launch Cava: %v", err))
-		} else {
-			a.logMessage("Launched Cava audio visualizer")
-		}
-		return a, nil
+		// Global: Shift+C - Toggle in-app Cava audio visualizer
+		a.toggleInAppCava()
+		return a, a.tick()
 	case "shift+z", "Z":
 		// Global: Shift+Z - Toggle Zen mode (full-screen colored album art)
 		a.state.ZenMode = !a.state.ZenMode
@@ -659,6 +685,10 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.logMessage("Zen mode disabled")
 			a.updateArtworkDisplayState()
 		}
+		return a, nil
+	case "shift+r":
+		// Global: Shift+R - Reload Omarchy theme colors
+		a.reloadOmarchyTheme()
 		return a, nil
 	case "h":
 		if a.isVimMode() {
@@ -1080,7 +1110,8 @@ func (a *App) handleHomeKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Handle selection with queue only
 		return a.handleHomeSelection(true) // true = queue only
 	case "R", "shift+r":
-		// Refresh home data
+		// Refresh home data & Omarchy theme colors
+		a.reloadOmarchyTheme()
 		return a, a.loadHomeData()
 	}
 
@@ -1371,7 +1402,8 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, a.addAlbumToQueue(a.state.Albums[a.state.SelectedAlbumIndex])
 		}
 	case "R", "shift+r":
-		// Refresh albums
+		// Refresh albums & Omarchy theme colors
+		a.reloadOmarchyTheme()
 		return a, a.loadAlbums()
 	}
 
@@ -1938,7 +1970,8 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, a.showArtistModal(a.state.Artists[a.state.SelectedArtistIndex])
 		}
 	case "R", "shift+r":
-		// Refresh artists
+		// Refresh artists & Omarchy theme colors
+		a.reloadOmarchyTheme()
 		return a, a.loadArtists()
 	default:
 		// Alpha-jump navigation: press any letter to jump to first artist starting with that letter
@@ -2080,7 +2113,8 @@ func (a *App) handlePlaylistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, a.addPlaylistToQueue(a.state.Playlists[a.state.SelectedPlaylistIndex])
 		}
 	case "R", "shift+r":
-		// Refresh playlists
+		// Refresh playlists & Omarchy theme colors
+		a.reloadOmarchyTheme()
 		return a, a.loadPlaylists()
 	}
 
@@ -2148,7 +2182,8 @@ func (a *App) handleRadioKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.queueRadioStation(station)
 		}
 	case "R", "shift+r":
-		// Refresh radio stations
+		// Refresh radio stations & Omarchy theme colors
+		a.reloadOmarchyTheme()
 		return a, a.loadRadioData()
 	}
 
@@ -3704,5 +3739,112 @@ func (a *App) loadAlbumArtworkWithColor(album models.Album, forceColor bool) {
 	}
 	
 	a.state.LoadingArtwork = false
+}
+
+// reloadOmarchyTheme checks and reloads Omarchy theme colors directly from system config or config.toml
+func (a *App) reloadOmarchyTheme() {
+	home, err := os.UserHomeDir()
+	if err == nil {
+		colorsPath := filepath.Join(home, ".config", "omarchy", "current", "theme", "colors.toml")
+		if data, err := os.ReadFile(colorsPath); err == nil {
+			colorsMap := make(map[string]string)
+			lines := strings.Split(string(data), "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
+					colorsMap[key] = val
+				}
+			}
+
+			if len(colorsMap) > 0 {
+				themeColors := map[string]string{}
+
+				if accent, ok := colorsMap["accent"]; ok {
+					themeColors["accent"] = accent
+				} else if c4, ok := colorsMap["color4"]; ok {
+					themeColors["accent"] = c4
+				}
+
+				if primary, ok := colorsMap["color4"]; ok {
+					themeColors["primary"] = primary
+				} else if accent, ok := colorsMap["accent"]; ok {
+					themeColors["primary"] = accent
+				}
+
+				if secondary, ok := colorsMap["color5"]; ok {
+					themeColors["secondary"] = secondary
+				} else if c2, ok := colorsMap["color2"]; ok {
+					themeColors["secondary"] = c2
+				}
+
+				if success, ok := colorsMap["color2"]; ok {
+					themeColors["success"] = success
+				}
+
+				if warning, ok := colorsMap["color3"]; ok {
+					themeColors["warning"] = warning
+				}
+
+				if errColor, ok := colorsMap["color1"]; ok {
+					themeColors["error"] = errColor
+				}
+
+				bg := colorsMap["background"]
+				fg := colorsMap["foreground"]
+
+				themeName := "omarchy-theme"
+				namePath := filepath.Join(home, ".config", "omarchy", "current", "theme.name")
+				if nBytes, nErr := os.ReadFile(namePath); nErr == nil {
+					themeName = strings.TrimSpace(string(nBytes))
+				}
+
+				newTheme := views.NewThemeFromConfigStruct(
+					themeName,
+					"omarchy",
+					bg,
+					fg,
+					themeColors,
+				)
+				newStyles := views.NewThemedStyles(newTheme)
+				a.view.SetTheme(newTheme, newStyles)
+				a.logMessage(fmt.Sprintf("Refreshed Omarchy theme: %s", themeName))
+				return
+			}
+		}
+	}
+
+	// Fallback to reloading config.toml
+	cfg, err := config.Load()
+	if err == nil && cfg != nil {
+		var newTheme views.Theme
+		if cfg.Theme.Name != "" && cfg.Theme.Colors.Accent != "" {
+			colors := map[string]string{
+				"accent":    cfg.Theme.Colors.Accent,
+				"primary":   cfg.Theme.Colors.Primary,
+				"secondary": cfg.Theme.Colors.Secondary,
+				"success":   cfg.Theme.Colors.Success,
+				"warning":   cfg.Theme.Colors.Warning,
+				"error":     cfg.Theme.Colors.Error,
+			}
+			newTheme = views.NewThemeFromConfigStruct(
+				cfg.Theme.Name,
+				cfg.Theme.Source,
+				cfg.Theme.Background,
+				cfg.Theme.Foreground,
+				colors,
+			)
+		} else {
+			newTheme = views.NewTheme(cfg.UI.Theme, cfg.UI.AccentIndex)
+		}
+		newStyles := views.NewThemedStyles(newTheme)
+		a.view.SetTheme(newTheme, newStyles)
+		a.logMessage(fmt.Sprintf("Refreshed theme: %s", newTheme.Name))
+	}
 }
 

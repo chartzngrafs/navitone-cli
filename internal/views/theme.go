@@ -239,7 +239,7 @@ func NewThemedStyles(theme Theme) ThemedStyles {
         TabActive: lipgloss.NewStyle().
             Bold(true).
             Foreground(theme.Background).
-            Background(theme.Accent).
+            Background(theme.Primary).
             Padding(0, 1),
         TabInactive: lipgloss.NewStyle().
             Foreground(theme.Foreground).
@@ -253,10 +253,8 @@ func NewThemedStyles(theme Theme) ThemedStyles {
         // Layout Components with theme integration
         Header: lipgloss.NewStyle().
             Bold(true).
-            Foreground(theme.Background).
-            Background(theme.Primary).
-            Padding(0, 1).
-            Width(100),
+            Foreground(theme.Foreground).
+            Padding(0, 1),
         Content: lipgloss.NewStyle().
             Foreground(theme.Foreground).
             Padding(1).

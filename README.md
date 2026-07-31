@@ -8,6 +8,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 
 ## ✨ Key Features
 
+- **Omarchy Moving Gradient & Visual Flair** - Rotating multi-color Omarchy gradient body borders (`Shift+G`), animated timeline progress wave, ambient selection row shimmer, and sleek tab navigation header accent
 - **Enhanced Theming System** - Rich 8-color theming with Omarchy integration for desktop-synchronized colors
 - **Intuitive TUI Interface** - Tab-based navigation with comprehensive visual styling and themed components
 - **Navidrome Integration** - Full API support for streaming, library management, and internet radio proxying
@@ -25,6 +26,7 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 ## 🚀 Current Status
 
 ### ✅ Fully Implemented
+- **Omarchy Moving Gradient & Visual Flair** - Dynamic, rotating TrueColor gradient borders surrounding main container boxes across all tabs (`Shift+G`), multi-color progress wave, row selection shimmer, and redesigned header tab bar
 - **Streamlined Control Panel** - Single rounded 3-line panel replacing 3 separate legacy boxes, freeing 5+ lines of screen real estate for content
 - **Zen Mode** - Distraction-free full-screen colored album art mode (`Shift+Z`), showing colored artwork, track metadata, playing status, live bitrate, and progress bar while hiding UI chrome
 - **Enhanced Theming System** - Rich 8-color theming with 40+ styled components, progress bars, status indicators, and optional Omarchy desktop theme synchronization
@@ -255,8 +257,9 @@ The application will automatically download required Go dependencies:
   - Line 1: Status badge (`▶ Playing` / `⏸ Paused`), track title, artist, album, live bitrate (`320 kbps`), volume, shuffle, queue count
   - Line 2: Dynamic timeline progress bar (`01:23 [ ▓▓▓▓▓▓▓░░░░ ] 03:45`)
   - Line 3: Live activity log ticker (left) + context-aware hotkey hints (right)
-- **Zen Mode**: Shift+Z toggles full-screen centered colored album art along with track info (Title, Artist, Album, Year), playing status (▶/⏸), live bitrate (`320 kbps`), volume, and progress bar (`01:23 / 03:45`)
-- **Audio Visualizer**: Shift+C launches Cava in new terminal window with cross-platform support
+- **Zen Mode**: Shift+Z toggles full-screen centered colored album art framed in an animated Omarchy moving gradient box, track title with smooth gradient wave text, playing status (▶/⏸), live bitrate (`320 kbps`), volume, and matching timeline progress bar wave (`01:23 / 03:45`)
+- **Visual Flair Suite**: Shift+G toggles animated Omarchy moving gradient borders around main tab containers and Zen Mode artwork, moving gradient waves across track titles and progress timeline bars, ambient selection row shimmer, and header separator line
+- **Integrated Audio Visualizer**: Shift+C toggles an in-app multi-bar Cava spectrum visualizer spanning the bottom of the main box up to 20 rows height in active Omarchy gradient colors (no separate terminal window required)
 - **Volume Control**: Shift+Up/Down for volume adjustment
 - **Seeking**: Left/Right arrow keys for 10-second scrubbing
 - **Multi-format Support**: FLAC, MP3, OGG, WAV streaming with real-time playback
@@ -322,6 +325,8 @@ token = ""
 
 [ui]
 theme = "dark"
+gradient_border = true    # Enable Omarchy moving gradient & visual flair (Shift+G toggle)
+cava_visualizer = true    # Enable integrated Cava spectrum visualizer by default (Shift+C toggle)
 show_album_art = true     # Enable ASCII artwork display
 vim_mode = false          # Enable Vim keybindings (j/k list, h/l tabs, g/G jump)
 artwork_quality = "high" # Quality: low, medium, high, ultra
@@ -348,8 +353,15 @@ Notes:
 - **40+ Styled Components**: Progress bars, status indicators, content categories, interactive states
 - **Visual Hierarchy**: Semantic color coding for success/warning/error states, content differentiation
 
-#### Omarchy Desktop Integration (Optional)
+#### Omarchy Desktop Integration & Moving Gradient Visual Flair
 - **Real-time Theme Sync**: Automatically synchronizes with your Omarchy desktop theme
+- **On-Demand Theme Reload (`Shift+R`)**: Pressing `Shift+R` instantly re-reads the active Omarchy theme colors from `~/.config/omarchy/current/theme/colors.toml` and updates all UI elements in real-time without restarting Navitone
+- **Moving Gradient Box Border**: TrueColor 24-bit RGB linear interpolation rotating active Omarchy colors around the main tab container box (`Shift+G` to toggle)
+- **Zen Mode Flair Suite**: Animated Omarchy moving gradient box border around full-screen ASCII artwork, smooth gradient wave track title text, and matching multi-color timeline progress bar
+- **Integrated Audio Visualizer**: In-app multi-bar Cava spectrum visualizer styled in active Omarchy gradient colors (`Shift+C` to toggle)
+- **Animated Timeline Progress Wave**: Multi-color gradient wave filling the track timeline bar during playback (both in bottom control bar and Zen Mode)
+- **Ambient Selection Row Shimmer**: Smooth, relaxing color morphing for active item cursor selection across all tabs (including Home tab sections)
+- **Redesigned Header Bar**: Clean, separated tab pills with active theme highlights and a moving gradient separator accent line
 - **Universal Theme Support**: Works with JSON and TOML theme formats from the entire Omarchy ecosystem
 - **Desktop Cohesion**: Your music player matches your desktop theme automatically
 - **Smart Color Mapping**: Omarchy colors intelligently mapped to Navitone UI elements

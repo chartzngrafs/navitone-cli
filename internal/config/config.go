@@ -48,6 +48,8 @@ type UIConfig struct {
     ArtworkQuality string `toml:"artwork_quality"` // "low", "medium", "high", "ultra"
     ArtworkColor   bool   `toml:"artwork_color"`   // Enable colored ASCII art
     ArtworkSize    string `toml:"artwork_size"`    // "small", "medium", "large"
+    GradientBorder bool   `toml:"gradient_border"` // Moving gradient border & visual flair
+    CavaVisualizer bool   `toml:"cava_visualizer"` // Integrated Cava spectrum visualizer
 }
 
 // ThemeConfig contains enhanced theming with Omarchy integration support
@@ -116,6 +118,8 @@ func DefaultConfig() *Config {
             ArtworkQuality: "high",   // Default to high quality
             ArtworkColor:   false,    // Start with monochrome for compatibility
             ArtworkSize:    "medium", // Balanced size
+            GradientBorder: true,     // Enabled by default for rich visual flair
+            CavaVisualizer: true,     // Enabled by default for in-app Cava visualizer
             Keybindings: map[string]string{
                 "quit":       "ctrl+c,q",
                 "next_tab":   "tab",

@@ -212,6 +212,14 @@ type AppState struct {
 	LoadingArtwork      bool   // Whether artwork is being loaded
 	ShowArtwork         bool   // Whether to show artwork (based on config + space)
 	ZenMode             bool   // Whether Zen Mode is enabled (full-screen colored artwork)
+	
+	// Visual flair state
+	EnableGradientBorder bool   // Whether moving gradient borders & visual flair are enabled
+	AnimTick             int    // Counter for visual flair animations
+	
+	// Integrated Cava Visualizer state
+	ShowCavaVisualizer   bool   // Whether in-app Cava visualizer is active
+	CavaBars             []int  // Spectrum frequency bar heights (0-100)
 }
 
 // AddLogMessage adds a log message to the log buffer, keeping only the latest messages
