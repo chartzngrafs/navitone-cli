@@ -37,6 +37,7 @@ type AudioConfig struct {
 type UIConfig struct {
     Theme          string            `toml:"theme"`
     ShowAlbumArt   bool              `toml:"show_album_art"`
+    VimMode        bool              `toml:"vim_mode"`
     HomeAlbumCount int               `toml:"home_album_count"` // Albums shown per section on home tab
     Keybindings    map[string]string `toml:"keybindings"`
     // AccentIndex allows users to choose an ANSI palette index (0-15) for active highlights.
@@ -108,6 +109,7 @@ func DefaultConfig() *Config {
         UI: UIConfig{
             Theme:          "dark",
             ShowAlbumArt:   false, // Users need to enable manually
+            VimMode:        false, // Disabled by default
             HomeAlbumCount: 8,
             AccentIndex:    -1,
             // ASCII Art quality defaults

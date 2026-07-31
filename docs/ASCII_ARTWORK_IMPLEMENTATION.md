@@ -8,7 +8,9 @@ Add ASCII artwork display functionality to Navitone-CLI for Albums and Artists t
 2. **Dual Source**: Primary from Navidrome, fallback to MusicBrainz Cover Art Archive
 3. **ASCII Conversion**: Convert images to terminal-friendly ASCII art
 4. **Smart Layout**: Display artwork only when screen space permits
-5. **Caching**: Avoid redundant conversions and API calls
+5. **Caching**: Avoid redundant conversions and API calls (with color-aware cache keys)
+6. **Zen Mode (`Shift+Z`)**: Distraction-free mode featuring centered colored album art, playing track metadata, playing status, and progress bar while hiding UI chrome and overriding artwork config settings
+7. **Unified Control Panel**: Space-efficient 3-line bottom panel uniting player info, dynamic progress timeline, event log ticker, and contextual shortcuts
 
 ## Technical Architecture
 

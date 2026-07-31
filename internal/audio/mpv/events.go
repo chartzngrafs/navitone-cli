@@ -183,6 +183,18 @@ func (p *EventProcessor) handlePropertyChange(event MPVEvent) {
 				"paused": paused,
 			})
 		}
+	case "media-title", "icy-title":
+		if titleStr, ok := event.Data.(string); ok && titleStr != "" {
+			p.emitEvent(EventStateChange, map[string]interface{}{
+				"media-title": titleStr,
+			})
+		}
+	case "audio-bitrate":
+		if bitrateVal, ok := event.Data.(float64); ok && bitrateVal > 0 {
+			p.emitEvent(EventStateChange, map[string]interface{}{
+				"audio-bitrate": bitrateVal,
+			})
+		}
 	}
 }
 

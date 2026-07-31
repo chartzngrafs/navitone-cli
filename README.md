@@ -10,10 +10,14 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 
 - **Enhanced Theming System** - Rich 8-color theming with Omarchy integration for desktop-synchronized colors
 - **Intuitive TUI Interface** - Tab-based navigation with comprehensive visual styling and themed components
-- **Navidrome Integration** - Full API support for streaming and library management
-- **MPV-Powered Audio** - Professional audio playback with universal format support
+- **Navidrome Integration** - Full API support for streaming, library management, and internet radio proxying
+- **MPV-Powered Audio** - Professional audio playback with universal format support, dynamic bitrate monitoring, and fallback handling
+- **Real-Time ICY Stream Metadata** - Automatic live artist and song title parsing for web radio streams (Nightride FM, SomaFM, Icecast/Shoutcast)
+- **Live Bitrate Display** - Real-time streaming bitrate indicator positioned to the left of volume in control panel and Zen Mode (e.g. `320 kbps • Vol: 80%`)
 - **Smart Navigation** - Modal-based browsing with intuitive keybindings and themed progress indicators
 - **Queue Management** - Complete playback controls with themed status indicators and progress bars
+- **Unified Control Panel** - Streamlined 3-line bottom bar unifying player controls, dynamic progress timeline, live activity ticker, and context-aware keybind hints
+- **Zen Mode** - Full-screen colored ASCII album art display (`Shift+Z`) with track info, playing state, bitrate, and progress bar
 - **Audio Visualizer** - Integrated Cava support with Shift+C hotkey for new terminal launch
 - **ASCII Album Art** - Display album artwork as ASCII art in Albums and Artists tabs
 - **Scrobbling Support** - Last.fm and ListenBrainz integration with offline queuing
@@ -21,19 +25,25 @@ Navitone-CLI brings the convenience of a graphical music player to the terminal,
 ## 🚀 Current Status
 
 ### ✅ Fully Implemented
+- **Streamlined Control Panel** - Single rounded 3-line panel replacing 3 separate legacy boxes, freeing 5+ lines of screen real estate for content
+- **Zen Mode** - Distraction-free full-screen colored album art mode (`Shift+Z`), showing colored artwork, track metadata, playing status, live bitrate, and progress bar while hiding UI chrome
 - **Enhanced Theming System** - Rich 8-color theming with 40+ styled components, progress bars, status indicators, and optional Omarchy desktop theme synchronization
-- **MPV Audio Backend** - Professional-grade audio with universal format support and perfect seeking
+- **MPV Audio Backend** - Professional-grade audio with universal format support, dynamic bitrate reporting (`audio-bitrate`), and perfect seeking
+- **Internet Radio Proxying & Fallback** - Navidrome `/rest/stream?id=...` radio proxying with direct stream fallback, automatic Nightride FM `.m4a` -> `.mp3` mount normalization, and async stream retry logic
+- **Real-Time ICY Stream Metadata** - MPV `media-title` / `icy-title` property observation that dynamically updates artist and track title as songs change on live internet radio streams
+- **Live Bitrate Display** - Real-time audio bitrate indicator formatted to the left of volume (`320 kbps • Vol: 80%`) in player control panel and Zen Mode
 - **Core Architecture** - MVC pattern with clean separation of concerns
-- **Tab Navigation** - 6 tabs: Home, Albums, Artists, Playlists, Queue, Config with themed styling
-- **Interactive Configuration** - Form-based config with field validation and connection testing
+- **Tab Navigation** - 7 tabs: Home, Albums, Artists, Playlists, Radio, Queue, Config with themed styling
+- **Internet Radio Tab** - Live browsing and streaming of internet radio stations built into Navidrome server (`Enter`/`Space` play stream, `A`/`Alt+Enter` queue, `Shift+R` refresh)
+- **Interactive Configuration** - Form-based config with field validation, connection testing, and optional Vim keybindings mode
 - **Albums Tab** - Live browsing, modal track views, Alt+Enter quick queuing with themed indicators
 - **Artists Tab** - Nested navigation (Artist → Albums → Tracks) with smart queue integration
 - **Playlists Tab** - Complete playlist management with modal navigation, track-by-track playback, and queue integration
 - **Interactive Home Tab** - Enhanced with 4 interactive sections: Recently Added Albums, Top Artists, Most Played Albums, and Top Tracks with ↑↓ navigation and real play count data
 - **Queue Management** - Complete playback controls: play/pause, next/prev, volume, seeking with themed progress bars
 - **Modal System** - Seamless navigation flow with context-aware controls across Albums, Artists, and Playlists
-- **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with no vim-style keys
-- **Enhanced Global Search** - Shift+F modal search with intelligent result limiting, pagination, and dual-mode playback
+- **Enhanced Keybindings** - Intuitive shortcuts (Space, Alt+arrows, Shift+arrows) with optional Vim navigation mode (`vim_mode = true`)
+- **Enhanced Global Search** - / modal search with intelligent result limiting, pagination, and dual-mode playback
 - **ASCII Album Art System** - Configurable ASCII artwork display with Navidrome + MusicBrainz fallback, intelligent caching, and responsive layout
 - **Scrobbling System** - Server-side scrobbling via Navidrome (preferred) with optional client-side Last.fm/ListenBrainz and Now Playing updates
 - **Process Management** - Proper MPV lifecycle with graceful shutdown and cleanup
@@ -85,7 +95,7 @@ navitone-cli/
 - ↑↓ navigation with visual selection highlighting
 - **Enter** - Opens album tracks modal with detailed track listing
 - **Alt+Enter/A** - Queue entire album immediately (bypass modal)
-- **R** - Refresh albums list, maintains selection position
+- **Shift+R** - Refresh albums list, maintains selection position
 - **M** - Load more albums (loads next 50 when available)
 - **Smart Pagination**: Shows "more available - press M to load" when additional albums exist
 - **Modal Features**: Track-by-track navigation, play from any track, queue remainder
@@ -95,7 +105,7 @@ navitone-cli/
 - Format: `Artist Name (X albums)` with starred favorites (★)
 - ↑↓ navigation with selection highlighting
 - **Enter** - Opens artist albums modal showing all albums by artist
-- **R** - Refresh artists list
+- **Shift+R** - Refresh artists list
 - **Nested Navigation**: Artist → Albums → Tracks with seamless modal transitions
 - **Album Modal Features**: Enter = view tracks, Alt+Enter/A = queue all albums
 
@@ -103,7 +113,7 @@ navitone-cli/
 - **Enhanced Home Tab** - Browse top tracks directly in Home tab with seamless navigation
 - **Album Modals** - Access all tracks from any album with detailed track listings
 - **Artist Modals** - Browse artist albums and access their tracks through nested navigation  
-- **Global Search** - Shift+F to search and find specific tracks across your entire library
+- **Global Search** - / to search and find specific tracks across your entire library
 
 ### 📋 Playlists
 - Complete playlist management with intuitive navigation
@@ -111,7 +121,7 @@ navitone-cli/
 - ↑↓ navigation with selection highlighting and PgUp/PgDn support
 - **Enter** - Opens playlist tracks modal with detailed track listing
 - **Alt+Enter/A** - Queue entire playlist immediately (bypass modal)
-- **R** - Refresh playlists list
+- **Shift+R** - Refresh playlists list
 - **Modal Features**: Track-by-track navigation, play from any track, queue remainder
 - **Smart Integration**: Consistent Enter/Shift+Enter patterns with Albums and Artists tabs
 
@@ -153,9 +163,12 @@ navitone-cli/
 - **Queue Management** - Add/remove tracks, clear queue, visual navigation
 - **Playback Controls** - Play, pause, resume, stop, next, previous
 - **Volume Control** - Adjustable volume levels (0-100%)
-- **State Tracking** - Real-time playback position and duration
+- **Dynamic Bitrate Monitoring** - Real-time MPV audio bitrate observation (`audio-bitrate`) displayed to the left of volume (`320 kbps • Vol: 80%`)
+- **Live ICY Metadata Parsing** - MPV `media-title` and `icy-title` property monitoring that automatically updates track title and artist for live internet radio streams
+- **Radio Proxying & Fallback** - Proxied web radio streaming via Navidrome (`/rest/stream?id=...`), direct stream URL fallback, and automatic URL normalization for deprecated streams (Nightride FM `.m4a` to `.mp3`)
+- **State Tracking** - Real-time playback position, duration, and bitrate
 - **Event System** - Proper callbacks for UI updates and scrobbling
-- **Error Handling** - Graceful fallbacks and error recovery
+- **Error Handling** - Graceful fallbacks and async error recovery
 
 ## 🔧 Requirements
 
@@ -190,7 +203,8 @@ The application will automatically download required Go dependencies:
 
 ### Basic Navigation
 - **Tab/Shift+Tab** - Switch between tabs
-- **Shift+F** - Enhanced global search with intelligent pagination and dual-mode playback
+- **/** - Enhanced global search with intelligent pagination and dual-mode playback
+- **Shift+Z** - Toggle Zen Mode (full-screen colored album art)
 - **Shift+C** - Launch Cava audio visualizer in new terminal window
 - **Ctrl+C or q** - Quit application
 
@@ -208,12 +222,12 @@ The application will automatically download required Go dependencies:
    - Use ↑↓ to navigate through 4 curated sections
    - Enter to open modals (albums/artists) or play tracks
    - Shift+Enter to queue tracks without playing
-   - Press R to refresh all home data
+   - Press Shift+R to refresh all home data
 2. Navigate to **Albums** tab - browse your album collection
    - Use ↑↓ to navigate, Enter to view tracks in modal
    - Alt+Enter or A to queue entire album immediately
    - In album modal: Enter to play track + queue remainder
-   - Press R to refresh the list
+   - Press Shift+R to refresh the list
    - Press M to load more albums (loads next 50 when available)
 3. Navigate to **Artists** tab - browse by artist
    - See album counts and starred favorites (★)
@@ -232,11 +246,16 @@ The application will automatically download required Go dependencies:
 
 ### Enhanced Navigation & Playback ✅ WORKING
 - **Global Playback**: Space (play/pause), Alt+Left/Right (previous/next track)
-- **Enhanced Global Search**: Shift+F opens intelligent search modal with:
+- **Enhanced Global Search**: / opens intelligent search modal with:
   - Smart result limiting (5 per section: Artists, Albums, Tracks)
   - "MORE" pagination options for browsing additional results
   - Dual-mode playback: Enter (play + queue remaining) vs Shift+Enter (queue only)
   - Real-time search with organized, categorized results
+- **Streamlined Control Panel**: Single rounded 3-line card combining:
+  - Line 1: Status badge (`▶ Playing` / `⏸ Paused`), track title, artist, album, live bitrate (`320 kbps`), volume, shuffle, queue count
+  - Line 2: Dynamic timeline progress bar (`01:23 [ ▓▓▓▓▓▓▓░░░░ ] 03:45`)
+  - Line 3: Live activity log ticker (left) + context-aware hotkey hints (right)
+- **Zen Mode**: Shift+Z toggles full-screen centered colored album art along with track info (Title, Artist, Album, Year), playing status (▶/⏸), live bitrate (`320 kbps`), volume, and progress bar (`01:23 / 03:45`)
 - **Audio Visualizer**: Shift+C launches Cava in new terminal window with cross-platform support
 - **Volume Control**: Shift+Up/Down for volume adjustment
 - **Seeking**: Left/Right arrow keys for 10-second scrubbing
@@ -299,14 +318,15 @@ secret = \"\"
 
 [scrobbling.listenbrainz]
 enabled = false
-token = \"\"
+token = ""
 
 [ui]
-theme = \"dark\"
+theme = "dark"
 show_album_art = true     # Enable ASCII artwork display
-artwork_quality = \"high\" # Quality: low, medium, high, ultra
+vim_mode = false          # Enable Vim keybindings (j/k list, h/l tabs, g/G jump)
+artwork_quality = "high" # Quality: low, medium, high, ultra
 artwork_color = false     # Enable colored ASCII art
-artwork_size = \"medium\"  # Size: small, medium, large
+artwork_size = "medium"  # Size: small, medium, large
 home_album_count = 8
 accent_index = -1
 ```
@@ -403,7 +423,7 @@ go build -o bin/navitone ./cmd/navitone
 - [x] **Queue Management** - Complete playback controls with volume and seeking
 - [x] **Modal System** - Intuitive navigation flow with context-aware controls
 - [x] **Enhanced Keybindings** - Clean, conventional shortcuts without vim-style navigation
-- [x] **Enhanced Global Search** - Shift+F modal with intelligent pagination, dual-mode playback, and smart result limiting
+- [x] **Enhanced Global Search** - / modal with intelligent pagination, dual-mode playback, and smart result limiting
 - [x] **Interactive Home Tab** - Enhanced with 4 curated sections, seamless ↑↓ navigation, and real play count data integration
 - [x] **Process Management** - Proper MPV lifecycle with graceful shutdown
 - [x] **Scrobbling Support** - Last.fm and ListenBrainz with Now Playing updates
@@ -458,6 +478,31 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Impact**: Modal navigation and track playback now work seamlessly without UI corruption.
 
+### Internet Radio Streaming, Dynamic ICY Metadata & Bitrate Display (RESOLVED ✅)
+**Issue**: Web radio streams (such as Nightride FM) were failing to play due to client-side direct URL bypass and deprecated `.m4a` Icecast endpoints. Additionally, radio streams did not display dynamic song track changes or live streaming bitrate.
+
+**Root Cause**:
+- `navitone-cli` bypassed Navidrome's Subsonic API `/rest/stream?id=<radio_id>` proxy endpoint for `http://`/`https://` URLs, attempting to stream direct URLs from the client machine.
+- Nightride FM deprecated their `.m4a` Icecast mount points in favor of `.mp3` mount points (`https://stream.nightride.fm/*.mp3`), causing direct `.m4a` requests to return HTTP 404.
+- Asynchronous MPV stream load errors triggered `EventTrackError` without attempting fallback stream URLs.
+- MPV properties for `media-title`, `icy-title`, and `audio-bitrate` were not monitored.
+
+**Technical Fix**:
+- **Navidrome Stream Proxy**: Radio stations now prefer Navidrome's authenticated `/rest/stream?id=<radio_id>` proxy endpoint as primary when connected to Navidrome, matching Navidrome Web UI behavior.
+- **Nightride FM Mount Normalization**: Direct stream URLs automatically normalize deprecated `.m4a` Nightride URLs to active `.mp3` mount points.
+- **Async Fallback Retry**: Added `currentFallbackURL` / `hasRetriedCurrentTrack` state to MPV manager to automatically retry playback with direct stream URLs or Navidrome stream URLs if primary loading encounters async errors.
+- **Dynamic ICY Metadata**: Subscribed to MPV `media-title` and `icy-title` property changes to parse `"Artist - Track"` and update the UI in real time as songs change on air.
+- **Live Bitrate Display**: Subscribed to MPV `audio-bitrate` property changes and formatted the live stream bitrate directly to the left of `Vol:` in both the player control panel and Zen Mode (e.g., `320 kbps • Vol: 80% • Q: 1`).
+
+**Files Modified**:
+- `internal/audio/mpv/manager.go`: Added radio proxy resolution, fallback retry, ICY metadata parsing, and `audio-bitrate` property observation
+- `internal/audio/mpv/events.go`: Added `media-title`, `icy-title`, and `audio-bitrate` property event handlers
+- `internal/controllers/app.go`: Added URL normalization, track title change artwork triggers, and `AppState.Bitrate` updates
+- `internal/views/main.go`: Formatted live bitrate to the left of `Vol:` in bottom player bar and Zen Mode
+- `internal/models/app.go`: Added `Bitrate` field to `AppState`
+
+**Impact**: Internet radio stations (including Nightride FM and SomaFM) stream reliably with server proxy fallback, dynamically update live song title & artist as tracks change, and display real-time stream bitrate in the TUI.
+
 ## 🙏 Acknowledgments
 
 - [Navidrome](https://github.com/navidrome/navidrome) - Excellent music server
@@ -468,4 +513,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Note**: Phase 1 core functionality is **complete**! The application now features a professional MPV-powered audio backend with universal format support, intuitive modal navigation, smart queue management, and clean keybindings. Ready for daily use with any Navidrome server.
 
-**Latest Update**: ✅ **Enhanced Theming System with Omarchy Integration** - Comprehensive theming overhaul featuring rich 8-color palettes, 40+ styled UI components, progress bars, status indicators, and content categorization. Optional Omarchy desktop integration provides real-time theme synchronization with automatic color extraction from JSON/TOML formats, desktop notifications, and intelligent color mapping. System includes graceful fallbacks for users without Omarchy, maintaining backward compatibility while providing enhanced visual experience for all users. Transforms Navitone from basic terminal utility to beautifully themed desktop-integrated music player.
+**Latest Update**: ✅ **Internet Radio Streaming, Dynamic ICY Metadata & Live Bitrate Display** - Enhanced internet radio playback featuring Navidrome Subsonic API `/rest/stream?id=<radio_id>` proxy streaming, automatic Nightride FM `.m4a` to `.mp3` mount point normalization, and async MPV fallback retries. Includes real-time ICY stream metadata observation (`media-title`/`icy-title`) for live track and artist updates in the TUI, as well as dynamic streaming bitrate display (`audio-bitrate`) formatted directly to the left of `Vol:` in both the main player bar and Zen Mode (`Shift+Z`).

@@ -677,3 +677,33 @@ func (c *Client) GetPlaylistTracks(ctx context.Context, playlistID string) (*Pla
 
 	return &playlistResp, nil
 }
+
+// GetInternetRadioStations retrieves the list of internet radio stations from Navidrome
+func (c *Client) GetInternetRadioStations(ctx context.Context) ([]RadioStation, error) {
+	params := url.Values{}
+
+	resp, err := c.makeRequest(ctx, "getInternetRadioStations", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading radio stations response: %w", err)
+	}
+
+	var radioResp InternetRadioStationsResponse
+	if err := json.Unmarshal(body, &radioResp); err != nil {
+		return nil, fmt.Errorf("parsing radio stations response: %w", err)
+	}
+
+	if radioResp.SubsonicResponse.Status != "ok" {
+		if radioResp.SubsonicResponse.Error != nil {
+			return nil, fmt.Errorf("radio stations error: %s", radioResp.SubsonicResponse.Error.Message)
+		}
+		return nil, fmt.Errorf("radio stations failed with status: %s", radioResp.SubsonicResponse.Status)
+	}
+
+	return radioResp.SubsonicResponse.InternetRadioStations.Stations(), nil
+}

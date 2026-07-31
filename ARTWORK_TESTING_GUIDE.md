@@ -32,6 +32,16 @@
 3. **Expected Result**: ASCII artwork should appear below the artist list
 4. **Note**: Artist artwork uses MusicBrainz fallback (may be slower or not available for all artists)
 
+### Step 4: Test Zen Mode (Shift+Z)
+1. Press **Shift+Z** (or **Z**) anywhere in the application
+2. **Expected Layout**:
+   - **Centered Full-Color ASCII Album Art** (bypasses "Show Artwork" config toggle)
+   - **Track & Playing Info**: `🎵 Track Title` & `👤 Artist • 💿 Album (Year)`
+   - **Playing State & Progress**: `▶ Playing  •  Vol: 80%  •  🔀 Shuffle` + Progress timestamp (`01:23 / 03:45`) and progress bar (`[▓▓▓▓▓░░░░░]`)
+   - **Hidden Chrome**: Tabs, sidebars, track lists, and log areas are hidden for a clean experience
+3. **Playback Controls**: Media keys (`Space` to play/pause, `Alt+Right`/`Alt+Left` to skip, `Shift+Up`/`Shift+Down` for volume) continue working while in Zen Mode
+4. Press **Shift+Z** again to exit Zen Mode and restore the standard UI layout
+
 ## 🔍 What You Should See
 
 ### Config Tab (with quality options):
@@ -78,6 +88,12 @@ Audio Settings
     ████████████████████████████████████████
 
 Showing 1-15 of 245 albums
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ▶ Playing  🎵 Song Title — Artist (Album Name)     Vol: 80% • 🔀 ON • Q: 12  │
+│ 01:23  [ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░ ]  03:45                    │
+│ ⚡ Loaded artwork for Album          Enter Tracks • A Queue • Shift+S Sort...│
+╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## 🐛 Troubleshooting

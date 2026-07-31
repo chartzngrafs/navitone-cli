@@ -8,6 +8,7 @@ import (
 	"navitone-cli/pkg/navidrome"
 	"navitone-cli/pkg/scrobbling"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -452,6 +453,16 @@ func (m *Manager) IsShuffleEnabled() bool {
 	return m.shuffleMode
 }
 
+// GetBitrate returns the current audio bitrate in kbps
+func (m *Manager) GetBitrate() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.currentIndex >= 0 && m.currentIndex < len(m.queue) {
+		return m.queue[m.currentIndex].BitRate
+	}
+	return 0
+}
+
 // SeekForward seeks forward in the current track
 func (m *Manager) SeekForward(seconds int) error {
 	m.mu.Lock()
@@ -610,18 +621,41 @@ func (m *Manager) playTrackAtIndexLocked(index int) error {
 	if index == 0 || m.currentIndex == -1 {
 	}
 	
-	// Use stream URL with proper parameters for full track access
-	streamURL := m.navidromeClient.GetStreamURL(track.ID)
+	isRadio := track.Album == "Internet Radio" || track.Artist == "Radio Stream" ||
+		strings.HasPrefix(track.ID, "rad-") || strings.HasPrefix(track.Path, "http://") || strings.HasPrefix(track.Path, "https://")
+
+	var streamURL string
+	var fallbackURL string
+
+	if isRadio {
+		directURL := track.Path
+		if strings.Contains(directURL, "nightride.fm") && strings.HasSuffix(directURL, ".m4a") {
+			directURL = strings.TrimSuffix(directURL, ".m4a") + ".mp3"
+		}
+
+		if m.navidromeClient != nil && track.ID != "" {
+			streamURL = m.navidromeClient.GetStreamURL(track.ID)
+			fallbackURL = directURL
+		} else {
+			streamURL = directURL
+		}
+	} else {
+		if m.navidromeClient != nil {
+			streamURL = m.navidromeClient.GetStreamURL(track.ID)
+			fallbackURL = m.navidromeClient.GetDownloadURL(track.ID)
+		} else {
+			streamURL = track.Path
+		}
+	}
 
 	// Convert duration from seconds to time.Duration
 	trackDuration := time.Duration(track.Duration) * time.Second
 
 	// Pass the track format hint and duration to the player
 	err := m.player.PlayWithFormatAndDuration(streamURL, track.ID, track.Suffix, trackDuration)
-	if err != nil {
-		// Fallback to download URL
-		downloadURL := m.navidromeClient.GetDownloadURL(track.ID)
-		err = m.player.PlayWithFormatAndDuration(downloadURL, track.ID, track.Suffix, trackDuration)
+	if err != nil && fallbackURL != "" {
+		m.logMessage(fmt.Sprintf("Failed to play primary stream URL, trying fallback URL: %s", fallbackURL))
+		err = m.player.PlayWithFormatAndDuration(fallbackURL, track.ID, track.Suffix, trackDuration)
 		if err != nil {
 			return fmt.Errorf("failed to play track: %w", err)
 		}

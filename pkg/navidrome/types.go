@@ -202,6 +202,36 @@ type UserResponse struct {
     } `json:"subsonic-response"`
 }
 
+// RadioStation represents an internet radio station from Subsonic/Navidrome
+type RadioStation struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	StreamURL   string `json:"streamUrl"`
+	HomePageURL string `json:"homePageUrl,omitempty"`
+}
+
+// InternetRadioStationsList contains a list of radio stations
+type InternetRadioStationsList struct {
+	Radio                []RadioStation `json:"radio,omitempty"`
+	InternetRadioStation []RadioStation `json:"internetRadioStation,omitempty"`
+}
+
+// Stations returns whichever slice is populated
+func (l *InternetRadioStationsList) Stations() []RadioStation {
+	if len(l.InternetRadioStation) > 0 {
+		return l.InternetRadioStation
+	}
+	return l.Radio
+}
+
+// InternetRadioStationsResponse represents the response from getInternetRadioStations
+type InternetRadioStationsResponse struct {
+	SubsonicResponse struct {
+		BaseResponse
+		InternetRadioStations InternetRadioStationsList `json:"internetRadioStations"`
+	} `json:"subsonic-response"`
+}
+
 // ScrobblingCapabilities represents server-side scrobbling availability and user status
 type ScrobblingCapabilities struct {
     ServerScrobblingAvailable bool

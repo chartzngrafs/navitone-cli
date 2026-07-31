@@ -6,6 +6,7 @@ import (
     "navitone-cli/internal/models"
     "navitone-cli/pkg/navidrome"
     "navitone-cli/pkg/scrobbling"
+    "strings"
     "sync"
     "time"
 )
@@ -30,6 +31,11 @@ type Manager struct {
 	position         time.Duration
 	duration         time.Duration
 	volume           float64
+	bitrate          int
+
+	// Fallback handling
+	currentFallbackURL     string
+	hasRetriedCurrentTrack bool
 
 	// Callbacks
 	stateCallback    func(*models.AppState)
@@ -107,6 +113,15 @@ func (m *Manager) Start() error {
 	}
 	if err := m.commands.ObserveProperty(3, "pause"); err != nil {
 		m.logMessage(fmt.Sprintf("Failed to observe pause: %v", err))
+	}
+	if err := m.commands.ObserveProperty(4, "media-title"); err != nil {
+		m.logMessage(fmt.Sprintf("Failed to observe media-title: %v", err))
+	}
+	if err := m.commands.ObserveProperty(5, "icy-title"); err != nil {
+		m.logMessage(fmt.Sprintf("Failed to observe icy-title: %v", err))
+	}
+	if err := m.commands.ObserveProperty(6, "audio-bitrate"); err != nil {
+		m.logMessage(fmt.Sprintf("Failed to observe audio-bitrate: %v", err))
 	}
 
 	// Start event processing loop
@@ -209,6 +224,31 @@ func (m *Manager) RemoveFromQueue(index int) {
 	m.notifyStateChange()
 }
 
+// MoveQueueTrack moves a track from fromIndex to toIndex in the queue
+func (m *Manager) MoveQueueTrack(fromIndex, toIndex int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if fromIndex < 0 || fromIndex >= len(m.queue) || toIndex < 0 || toIndex >= len(m.queue) || fromIndex == toIndex {
+		return
+	}
+
+	if m.currentIndex == fromIndex {
+		m.currentIndex = toIndex
+	} else if fromIndex < m.currentIndex && toIndex >= m.currentIndex {
+		m.currentIndex--
+	} else if fromIndex > m.currentIndex && toIndex <= m.currentIndex {
+		m.currentIndex++
+	}
+
+	track := m.queue[fromIndex]
+	m.queue = append(m.queue[:fromIndex], m.queue[fromIndex+1:]...)
+	m.queue = append(m.queue[:toIndex], append([]models.Track{track}, m.queue[toIndex:]...)...)
+
+	m.logMessage(fmt.Sprintf("Moved track from %d to %d in queue", fromIndex, toIndex))
+	m.notifyStateChange()
+}
+
 // ClearQueue removes all tracks from the queue
 func (m *Manager) ClearQueue() {
 	m.mu.Lock()
@@ -259,7 +299,7 @@ func (m *Manager) Pause() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.isPlaying && !m.isPaused && m.commands != nil {
+	if !m.isPaused && m.commands != nil {
 		if err := m.commands.Pause(); err != nil {
 			m.logMessage(fmt.Sprintf("Failed to pause: %v", err))
 		} else {
@@ -275,11 +315,12 @@ func (m *Manager) Resume() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.isPlaying && m.isPaused && m.commands != nil {
+	if m.isPaused && m.commands != nil {
 		if err := m.commands.Play(); err != nil {
 			m.logMessage(fmt.Sprintf("Failed to resume: %v", err))
 		} else {
 			m.isPaused = false
+			m.isPlaying = true
 			m.logMessage("Resumed playback")
 			m.notifyStateChange()
 		}
@@ -304,27 +345,52 @@ func (m *Manager) Stop() {
 
 // TogglePlayPause toggles between play and pause
 func (m *Manager) TogglePlayPause() error {
-	m.mu.RLock()
-	playing := m.isPlaying
-	paused := m.isPaused
-	currentIndex := m.currentIndex
-	queueLen := len(m.queue)
-	m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	m.logMessage(fmt.Sprintf("TogglePlayPause - playing: %v, paused: %v, index: %d, queue: %d",
-		playing, paused, currentIndex, queueLen))
-
-	if playing {
-		if paused {
-			m.Resume()
-		} else {
-			m.Pause()
-		}
-	} else {
-		return m.PlayCurrent()
+	if len(m.queue) == 0 {
+		return fmt.Errorf("queue is empty")
 	}
 
-	return nil
+	if m.currentIndex < 0 {
+		m.currentIndex = 0
+		return m.playTrackAtIndexLocked(0)
+	}
+
+	m.logMessage(fmt.Sprintf("TogglePlayPause - isPlaying: %v, isPaused: %v, index: %d, queue: %d",
+		m.isPlaying, m.isPaused, m.currentIndex, len(m.queue)))
+
+	// If currently paused, resume at position
+	if m.isPaused {
+		if m.commands != nil {
+			if err := m.commands.Play(); err != nil {
+				m.logMessage(fmt.Sprintf("Failed to resume: %v", err))
+				return err
+			}
+		}
+		m.isPaused = false
+		m.isPlaying = true
+		m.logMessage("Resumed playback")
+		m.notifyStateChange()
+		return nil
+	}
+
+	// If currently playing, pause at position
+	if m.isPlaying {
+		if m.commands != nil {
+			if err := m.commands.Pause(); err != nil {
+				m.logMessage(fmt.Sprintf("Failed to pause: %v", err))
+				return err
+			}
+		}
+		m.isPaused = true
+		m.logMessage("Paused playback")
+		m.notifyStateChange()
+		return nil
+	}
+
+	// If neither playing nor paused (e.g. stopped), play current track
+	return m.playTrackAtIndexLocked(m.currentIndex)
 }
 
 // NextTrack plays the next track in the queue
@@ -495,6 +561,16 @@ func (m *Manager) GetDuration() time.Duration {
 	return m.duration
 }
 
+// GetBitrate returns the current audio bitrate in kbps
+func (m *Manager) GetBitrate() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.currentIndex >= 0 && m.currentIndex < len(m.queue) && m.queue[m.currentIndex].BitRate > 0 {
+		return m.queue[m.currentIndex].BitRate
+	}
+	return m.bitrate
+}
+
 // Close closes the audio manager and releases resources
 func (m *Manager) Close() error {
 	m.Stop()
@@ -518,8 +594,43 @@ func (m *Manager) playTrackAtIndexLocked(index int) error {
 
 	track := m.queue[index]
 
-	// Get stream URL from Navidrome
-	streamURL := m.navidromeClient.GetStreamURL(track.ID)
+	// Determine if this track is an internet radio station
+	isRadio := track.Album == "Internet Radio" || track.Artist == "Radio Stream" ||
+		strings.HasPrefix(track.ID, "rad-") || strings.HasPrefix(track.Path, "http://") || strings.HasPrefix(track.Path, "https://")
+
+	var streamURL string
+	var fallbackURL string
+
+	if isRadio {
+		// Normalize direct stream URL (e.g. Nightride FM deprecated .m4a -> .mp3)
+		directURL := track.Path
+		if strings.Contains(directURL, "nightride.fm") && strings.HasSuffix(directURL, ".m4a") {
+			directURL = strings.TrimSuffix(directURL, ".m4a") + ".mp3"
+		}
+
+		if m.navidromeClient != nil && track.ID != "" {
+			// Navidrome server proxies radio stations via Subsonic API /rest/stream?id=<radio_id>
+			// This matches Navidrome Web UI behavior and ensures server-side playlist resolution, proxying, & header handling.
+			streamURL = m.navidromeClient.GetStreamURL(track.ID)
+			fallbackURL = directURL
+		} else {
+			streamURL = directURL
+			if m.navidromeClient != nil && track.ID != "" {
+				fallbackURL = m.navidromeClient.GetStreamURL(track.ID)
+			}
+		}
+	} else {
+		streamURL = track.Path
+		if !strings.HasPrefix(streamURL, "http://") && !strings.HasPrefix(streamURL, "https://") {
+			if m.navidromeClient != nil {
+				streamURL = m.navidromeClient.GetStreamURL(track.ID)
+				fallbackURL = m.navidromeClient.GetDownloadURL(track.ID)
+			}
+		}
+	}
+
+	m.currentFallbackURL = fallbackURL
+	m.hasRetriedCurrentTrack = false
 
 	// Update event processor with current track
 	if m.eventProcessor != nil {
@@ -528,10 +639,11 @@ func (m *Manager) playTrackAtIndexLocked(index int) error {
 
 	// Load file in MPV
 	if m.commands != nil {
-		if err := m.commands.LoadFile(streamURL, "replace"); err != nil {
-			// Fallback to download URL
-			downloadURL := m.navidromeClient.GetDownloadURL(track.ID)
-			if err := m.commands.LoadFile(downloadURL, "replace"); err != nil {
+		if err := m.commands.LoadFile(streamURL, "replace"); err != nil && fallbackURL != "" {
+			m.logMessage(fmt.Sprintf("Failed to load primary stream URL (%v), trying fallback URL: %s", err, fallbackURL))
+			m.hasRetriedCurrentTrack = true
+			m.currentFallbackURL = ""
+			if err := m.commands.LoadFile(fallbackURL, "replace"); err != nil {
 				return fmt.Errorf("failed to load track: %w", err)
 			}
 		}
@@ -748,6 +860,20 @@ func (m *Manager) handlePlaybackEvent(event PlaybackEvent) {
 
 	case EventTrackError:
 		m.logMessage(fmt.Sprintf("Track error: %v", event.Data))
+		if m.currentFallbackURL != "" && !m.hasRetriedCurrentTrack {
+			m.hasRetriedCurrentTrack = true
+			fallback := m.currentFallbackURL
+			m.currentFallbackURL = ""
+			m.logMessage(fmt.Sprintf("Retrying track/radio playback with fallback URL: %s", fallback))
+			go func() {
+				m.mu.Lock()
+				defer m.mu.Unlock()
+				if m.commands != nil {
+					_ = m.commands.LoadFile(fallback, "replace")
+				}
+			}()
+			return
+		}
 		// Try next track
 		go func() {
 			time.Sleep(100 * time.Millisecond)
@@ -776,8 +902,64 @@ func (m *Manager) handlePlaybackEvent(event PlaybackEvent) {
 					m.isPaused = false
 				}
 			}
+			if mediaTitle, exists := dataMap["media-title"]; exists {
+				if mediaTitleStr, ok := mediaTitle.(string); ok && mediaTitleStr != "" {
+					m.updateStreamMetadataLocked(mediaTitleStr)
+				}
+			}
+			if bitrateVal, exists := dataMap["audio-bitrate"]; exists {
+				if bitrateFloat, ok := bitrateVal.(float64); ok && bitrateFloat > 0 {
+					kbps := int(bitrateFloat / 1000.0)
+					if m.currentIndex >= 0 && m.currentIndex < len(m.queue) {
+						m.queue[m.currentIndex].BitRate = kbps
+					}
+					m.bitrate = kbps
+				}
+			}
 		}
 	}
 
 	m.notifyStateChange()
+}
+
+// updateStreamMetadataLocked parses dynamic stream metadata (e.g. ICY titles) for live streams
+func (m *Manager) updateStreamMetadataLocked(mediaTitle string) {
+	if m.currentIndex < 0 || m.currentIndex >= len(m.queue) {
+		return
+	}
+
+	track := &m.queue[m.currentIndex]
+	isRadio := track.Album == "Internet Radio" || track.Artist == "Radio Stream" ||
+		strings.HasPrefix(track.ID, "rad-") || strings.HasPrefix(track.Path, "http://") || strings.HasPrefix(track.Path, "https://")
+
+	if !isRadio {
+		return
+	}
+
+	var newArtist, newTitle string
+	if parts := strings.SplitN(mediaTitle, " - ", 2); len(parts) == 2 {
+		newArtist = strings.TrimSpace(parts[0])
+		newTitle = strings.TrimSpace(parts[1])
+	} else {
+		newTitle = strings.TrimSpace(mediaTitle)
+		newArtist = track.Artist
+	}
+
+	if newTitle != "" && (track.Title != newTitle || (newArtist != "" && track.Artist != newArtist)) {
+		if newArtist != "" {
+			track.Artist = newArtist
+		}
+		track.Title = newTitle
+		m.logMessage(fmt.Sprintf("Radio stream track update: %s - %s", track.Artist, track.Title))
+
+		if m.scrobbler != nil {
+			scrobbleTrack := scrobbling.ScrobbleTrack{
+				Title:    track.Title,
+				Artist:   track.Artist,
+				Album:    "Internet Radio",
+				Duration: 0,
+			}
+			go m.scrobbler.NowPlaying(track.ID, scrobbleTrack)
+		}
+	}
 }

@@ -41,12 +41,17 @@ func NewConverter(cfg *config.Config) *Converter {
 
 // ConvertFromURL downloads an image from URL and converts it to ASCII art
 func (c *Converter) ConvertFromURL(url string) (string, error) {
+	return c.ConvertFromURLWithColor(url, false)
+}
+
+// ConvertFromURLWithColor downloads an image from URL and converts it to ASCII art, optionally forcing color
+func (c *Converter) ConvertFromURLWithColor(url string, forceColor bool) (string, error) {
 	if url == "" {
 		return "", fmt.Errorf("empty URL provided")
 	}
 
 	// Get quality settings
-	quality := c.getQualitySettings()
+	quality := c.getQualitySettings(forceColor)
 	
 	// Configure ASCII converter with optimized settings
 	flags := aic_package.DefaultFlags()
@@ -94,14 +99,19 @@ func (c *Converter) ConvertFromImage(img image.Image) (string, error) {
 }
 
 // getQualitySettings returns optimized quality settings based on config
-func (c *Converter) getQualitySettings() QualitySettings {
+func (c *Converter) getQualitySettings(forceColor bool) QualitySettings {
 	// Get size settings
 	dimensions := c.getDimensionsForSize(c.config.UI.ArtworkSize)
 	
+	useColor := c.config.UI.ArtworkColor
+	if forceColor {
+		useColor = true
+	}
+
 	// Base settings based on quality level
 	settings := QualitySettings{
 		Dimensions:  dimensions,
-		UseColor:    c.config.UI.ArtworkColor,
+		UseColor:    useColor,
 		MaxHeight:   20, // Keep reasonable for terminal
 	}
 	
@@ -197,7 +207,7 @@ func (c *Converter) optimizeASCII(ascii string, quality QualitySettings) string 
 
 // GetArtworkSize returns the configured artwork size
 func (c *Converter) GetArtworkSize() (width, height int) {
-	quality := c.getQualitySettings()
+	quality := c.getQualitySettings(false)
 	if len(quality.Dimensions) >= 2 {
 		return quality.Dimensions[0], quality.Dimensions[1]
 	}

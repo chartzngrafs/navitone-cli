@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"navitone-cli/internal/artwork"
@@ -185,21 +186,35 @@ func NewApp() *App {
 // updateAudioState updates the app state based on audio manager changes
 func (a *App) updateAudioState(state *models.AppState) {
 	if a.audioManager != nil {
-		// Update queue from audio manager
-		a.state.Queue = a.audioManager.GetQueue()
-
-		// Update current playing track
+		// Read values from audioManager first without holding a.state.Mu lock
+		queue := a.audioManager.GetQueue()
 		currentTrack := a.audioManager.GetCurrentTrack()
+		isPlaying := a.audioManager.IsPlaying()
+		isShuffle := a.audioManager.IsShuffleEnabled()
+		pos := a.audioManager.GetPosition()
+		bitrate := a.audioManager.GetBitrate()
+
+		// Safely update AppState with fetched values
+		a.state.Mu.Lock()
+		prevTrack := a.state.CurrentTrack
+		a.state.Queue = queue
 		a.state.CurrentTrack = currentTrack
+		a.state.IsPlaying = isPlaying
+		a.state.IsShuffleMode = isShuffle
+		a.state.Position = pos
+		a.state.Bitrate = bitrate
+		if currentTrack != nil && currentTrack.BitRate == 0 && bitrate > 0 {
+			currentTrack.BitRate = bitrate
+		}
+		a.state.Mu.Unlock()
 
-		// Update playing state
-		a.state.IsPlaying = a.audioManager.IsPlaying()
-
-		// Update shuffle state
-		a.state.IsShuffleMode = a.audioManager.IsShuffleEnabled()
-
-		// Update position from audio manager
-		a.state.Position = a.audioManager.GetPosition()
+		// Check if track changed (ID or Title) and reload artwork if Zen mode or ShowArtwork is active
+		if (prevTrack == nil && currentTrack != nil) || (prevTrack != nil && currentTrack == nil) ||
+			(prevTrack != nil && currentTrack != nil && (prevTrack.ID != currentTrack.ID || prevTrack.Title != currentTrack.Title)) {
+			if a.state.ZenMode || a.state.ShowArtwork {
+				a.loadCurrentArtwork()
+			}
+		}
 	}
 }
 
@@ -334,6 +349,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.state.Playlists = msg.Playlists
 			a.state.LoadingError = ""
+		}
+		return a, nil
+	case RadioLoadResult:
+		// Handle radio stations load result
+		a.state.LoadingRadio = false
+		if msg.Error != nil {
+			a.state.LoadingError = msg.Error.Error()
+			a.logMessage(fmt.Sprintf("Radio error: %v", msg.Error))
+		} else {
+			a.state.RadioStations = msg.Stations
+			a.state.LoadingError = ""
+			a.logMessage(fmt.Sprintf("Loaded %d radio stations", len(msg.Stations)))
 		}
 		return a, nil
 	case AlbumTracksLoadResult:
@@ -484,6 +511,11 @@ func (a *App) tick() tea.Cmd {
 	})
 }
 
+// isVimMode returns true if Vim navigation mode is enabled in configuration
+func (a *App) isVimMode() bool {
+	return a.state != nil && a.state.ConfigForm != nil && a.state.ConfigForm.Config != nil && a.state.ConfigForm.Config.UI.VimMode
+}
+
 // View implements tea.Model
 func (a *App) View() string {
 	return a.view.Render()
@@ -491,6 +523,11 @@ func (a *App) View() string {
 
 // handleKeyPress processes keyboard input
 func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// If editing config field, let config handle input first
+	if a.state.CurrentTab == models.ConfigTab && a.state.ConfigForm.EditMode {
+		return a.handleConfigKeyPress(msg)
+	}
+
 	// Handle global player controls FIRST (before tab-specific handlers)
 	switch msg.String() {
 	case " ":
@@ -575,8 +612,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.state.Volume = int(newVolume * 100) // Sync UI state
 		}
 		return a, nil
-	case "shift+f", "F":
-		// Global: Shift+F - Open search modal
+	case "/":
+		// Global: / - Open search modal
 		a.state.ShowSearchModal = true
 		a.state.SearchQuery = ""
 		a.state.SearchResults = models.SearchResults{}
@@ -612,6 +649,27 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.logMessage("Launched Cava audio visualizer")
 		}
 		return a, nil
+	case "shift+z", "Z":
+		// Global: Shift+Z - Toggle Zen mode (full-screen colored album art)
+		a.state.ZenMode = !a.state.ZenMode
+		if a.state.ZenMode {
+			a.logMessage("Zen mode enabled")
+			a.loadCurrentArtwork()
+		} else {
+			a.logMessage("Zen mode disabled")
+			a.updateArtworkDisplayState()
+		}
+		return a, nil
+	case "h":
+		if a.isVimMode() {
+			a.prevTab()
+			return a, a.handleTabChange()
+		}
+	case "l":
+		if a.isVimMode() {
+			a.nextTab()
+			return a, a.handleTabChange()
+		}
 	}
 
 	// Handle config form input if in config tab
@@ -631,6 +689,9 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if a.state.CurrentTab == models.PlaylistsTab {
 		return a.handlePlaylistsKeyPress(msg)
+	}
+	if a.state.CurrentTab == models.RadioTab {
+		return a.handleRadioKeyPress(msg)
 	}
 	if a.state.CurrentTab == models.QueueTab {
 		return a.handleQueueKeyPress(msg)
@@ -957,6 +1018,10 @@ func (a *App) handleTabChange() tea.Cmd {
         if len(a.state.Playlists) == 0 && a.navidromeClient != nil && !a.state.LoadingPlaylists {
             return a.loadPlaylists()
         }
+    case models.RadioTab:
+        if len(a.state.RadioStations) == 0 && a.navidromeClient != nil && !a.state.LoadingRadio {
+            return a.loadRadioData()
+        }
     case models.ConfigTab:
         // Refresh server scrobbling status on entering Config tab
         a.updateServerScrobbleStatus()
@@ -975,12 +1040,33 @@ func (a *App) handleHomeKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+tab":
 		a.prevTab()
 		return a, a.handleTabChange()
-	case "up":
+	case "up", "k":
+		if msg.String() == "k" && !a.isVimMode() {
+			break
+		}
 		// Navigate up through all items across all sections
 		a.moveHomeSelectionUp()
-	case "down":
+	case "down", "j":
+		if msg.String() == "j" && !a.isVimMode() {
+			break
+		}
 		// Navigate down through all items across all sections
 		a.moveHomeSelectionDown()
+	case "g", "home":
+		if msg.String() == "g" && !a.isVimMode() {
+			break
+		}
+		a.state.HomeSelectedSection = 0
+		a.state.HomeSelectedIndex = 0
+	case "G", "end":
+		if msg.String() == "G" && !a.isVimMode() {
+			break
+		}
+		a.state.HomeSelectedSection = 3
+		count := a.getHomeItemsCount(3)
+		if count > 0 {
+			a.state.HomeSelectedIndex = count - 1
+		}
 	case "pgup":
 		// Jump to previous section or move up significantly within current section
 		a.moveHomeSelectionPageUp()
@@ -993,7 +1079,7 @@ func (a *App) handleHomeKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+enter":
 		// Handle selection with queue only
 		return a.handleHomeSelection(true) // true = queue only
-	case "r":
+	case "R", "shift+r":
 		// Refresh home data
 		return a, a.loadHomeData()
 	}
@@ -1225,14 +1311,34 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+tab":
 		a.prevTab()
 		return a, a.handleTabChange()
-	case "up":
+	case "up", "k":
+		if msg.String() == "k" && !a.isVimMode() {
+			break
+		}
 		if a.state.SelectedAlbumIndex > 0 {
 			a.state.SelectedAlbumIndex--
 			a.loadCurrentArtwork()
 		}
-	case "down":
+	case "down", "j":
+		if msg.String() == "j" && !a.isVimMode() {
+			break
+		}
 		if a.state.SelectedAlbumIndex < len(a.state.Albums)-1 {
 			a.state.SelectedAlbumIndex++
+			a.loadCurrentArtwork()
+		}
+	case "g", "home":
+		if msg.String() == "g" && !a.isVimMode() {
+			break
+		}
+		a.state.SelectedAlbumIndex = 0
+		a.loadCurrentArtwork()
+	case "G", "end":
+		if msg.String() == "G" && !a.isVimMode() {
+			break
+		}
+		if len(a.state.Albums) > 0 {
+			a.state.SelectedAlbumIndex = len(a.state.Albums) - 1
 			a.loadCurrentArtwork()
 		}
 	case "pgup":
@@ -1264,7 +1370,7 @@ func (a *App) handleAlbumsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.SelectedAlbumIndex < len(a.state.Albums) {
 			return a, a.addAlbumToQueue(a.state.Albums[a.state.SelectedAlbumIndex])
 		}
-	case "r":
+	case "R", "shift+r":
 		// Refresh albums
 		return a, a.loadAlbums()
 	}
@@ -1407,6 +1513,38 @@ func (a *App) loadPlaylists() tea.Cmd {
 		}
 
 		return PlaylistsLoadResult{Playlists: playlists}
+	})
+}
+
+// loadRadioData loads internet radio stations from Navidrome
+func (a *App) loadRadioData() tea.Cmd {
+	if a.navidromeClient == nil {
+		return nil
+	}
+
+	a.state.LoadingRadio = true
+	a.state.LoadingError = ""
+
+	return tea.Cmd(func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		stations, err := a.navidromeClient.GetInternetRadioStations(ctx)
+		if err != nil {
+			return RadioLoadResult{Error: err}
+		}
+
+		modelStations := make([]models.RadioStation, len(stations))
+		for i, s := range stations {
+			modelStations[i] = models.RadioStation{
+				ID:          s.ID,
+				Name:        s.Name,
+				StreamURL:   s.StreamURL,
+				HomePageURL: s.HomePageURL,
+			}
+		}
+
+		return RadioLoadResult{Stations: modelStations}
 	})
 }
 
@@ -1758,12 +1896,24 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+tab":
 		a.prevTab()
 		return a, a.handleTabChange()
-	case "up":
+	case "up", "k":
+		if msg.String() == "k" && !a.isVimMode() {
+			if len(msg.String()) == 1 {
+				a.jumpToArtistByLetter('k')
+			}
+			break
+		}
 		if a.state.SelectedArtistIndex > 0 {
 			a.state.SelectedArtistIndex--
 			a.loadCurrentArtwork()
 		}
-	case "down":
+	case "down", "j":
+		if msg.String() == "j" && !a.isVimMode() {
+			if len(msg.String()) == 1 {
+				a.jumpToArtistByLetter('j')
+			}
+			break
+		}
 		if a.state.SelectedArtistIndex < len(a.state.Artists)-1 {
 			a.state.SelectedArtistIndex++
 			a.loadCurrentArtwork()
@@ -1787,7 +1937,7 @@ func (a *App) handleArtistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.SelectedArtistIndex < len(a.state.Artists) {
 			return a, a.showArtistModal(a.state.Artists[a.state.SelectedArtistIndex])
 		}
-	case "r":
+	case "R", "shift+r":
 		// Refresh artists
 		return a, a.loadArtists()
 	default:
@@ -1876,13 +2026,31 @@ func (a *App) handlePlaylistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+tab":
 		a.prevTab()
 		return a, a.handleTabChange()
-	case "up":
+	case "up", "k":
+		if msg.String() == "k" && !a.isVimMode() {
+			break
+		}
 		if a.state.SelectedPlaylistIndex > 0 {
 			a.state.SelectedPlaylistIndex--
 		}
-	case "down":
+	case "down", "j":
+		if msg.String() == "j" && !a.isVimMode() {
+			break
+		}
 		if a.state.SelectedPlaylistIndex < len(a.state.Playlists)-1 {
 			a.state.SelectedPlaylistIndex++
+		}
+	case "g", "home":
+		if msg.String() == "g" && !a.isVimMode() {
+			break
+		}
+		a.state.SelectedPlaylistIndex = 0
+	case "G", "end":
+		if msg.String() == "G" && !a.isVimMode() {
+			break
+		}
+		if len(a.state.Playlists) > 0 {
+			a.state.SelectedPlaylistIndex = len(a.state.Playlists) - 1
 		}
 	case "pgup":
 		// Move up by 25 items
@@ -1911,12 +2079,136 @@ func (a *App) handlePlaylistsKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.state.SelectedPlaylistIndex < len(a.state.Playlists) {
 			return a, a.addPlaylistToQueue(a.state.Playlists[a.state.SelectedPlaylistIndex])
 		}
-	case "r":
+	case "R", "shift+r":
 		// Refresh playlists
 		return a, a.loadPlaylists()
 	}
 
 	return a, nil
+}
+
+// handleRadioKeyPress handles keyboard input for the radio tab
+func (a *App) handleRadioKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return a, a.cleanup()
+	case "tab":
+		a.nextTab()
+		return a, a.handleTabChange()
+	case "shift+tab":
+		a.prevTab()
+		return a, a.handleTabChange()
+	case "up", "k":
+		if msg.String() == "k" && !a.isVimMode() {
+			break
+		}
+		if a.state.SelectedRadioIndex > 0 {
+			a.state.SelectedRadioIndex--
+		}
+	case "down", "j":
+		if msg.String() == "j" && !a.isVimMode() {
+			break
+		}
+		if a.state.SelectedRadioIndex < len(a.state.RadioStations)-1 {
+			a.state.SelectedRadioIndex++
+		}
+	case "g", "home":
+		if msg.String() == "g" && !a.isVimMode() {
+			break
+		}
+		a.state.SelectedRadioIndex = 0
+	case "G", "end":
+		if msg.String() == "G" && !a.isVimMode() {
+			break
+		}
+		if len(a.state.RadioStations) > 0 {
+			a.state.SelectedRadioIndex = len(a.state.RadioStations) - 1
+		}
+	case "pgup":
+		a.state.SelectedRadioIndex -= 25
+		if a.state.SelectedRadioIndex < 0 {
+			a.state.SelectedRadioIndex = 0
+		}
+	case "pgdown":
+		a.state.SelectedRadioIndex += 25
+		if a.state.SelectedRadioIndex >= len(a.state.RadioStations) {
+			a.state.SelectedRadioIndex = len(a.state.RadioStations) - 1
+		}
+		if a.state.SelectedRadioIndex < 0 {
+			a.state.SelectedRadioIndex = 0
+		}
+	case "enter", " ":
+		if len(a.state.RadioStations) > 0 && a.state.SelectedRadioIndex >= 0 && a.state.SelectedRadioIndex < len(a.state.RadioStations) {
+			station := a.state.RadioStations[a.state.SelectedRadioIndex]
+			a.playRadioStation(station)
+		}
+	case "a", "alt+enter":
+		if len(a.state.RadioStations) > 0 && a.state.SelectedRadioIndex >= 0 && a.state.SelectedRadioIndex < len(a.state.RadioStations) {
+			station := a.state.RadioStations[a.state.SelectedRadioIndex]
+			a.queueRadioStation(station)
+		}
+	case "R", "shift+r":
+		// Refresh radio stations
+		return a, a.loadRadioData()
+	}
+
+	return a, nil
+}
+
+// normalizeRadioURL fixes known deprecated stream URL formats (such as Nightride FM .m4a -> .mp3)
+func normalizeRadioURL(rawURL string) string {
+	if strings.Contains(rawURL, "nightride.fm") && strings.HasSuffix(rawURL, ".m4a") {
+		return strings.TrimSuffix(rawURL, ".m4a") + ".mp3"
+	}
+	return rawURL
+}
+
+// playRadioStation starts streaming a radio station immediately
+func (a *App) playRadioStation(station models.RadioStation) {
+	track := models.Track{
+		ID:       station.ID,
+		Title:    station.Name,
+		Artist:   "Radio Stream",
+		Album:    "Internet Radio",
+		Path:     normalizeRadioURL(station.StreamURL),
+		Duration: 0,
+	}
+
+	if a.audioManager != nil {
+		a.audioManager.ClearQueue()
+		a.audioManager.AddTracksToQueue([]models.Track{track})
+		err := a.audioManager.PlayCurrent()
+		if err != nil {
+			a.logMessage(fmt.Sprintf("Failed to play radio station: %v", err))
+		} else {
+			a.logMessage(fmt.Sprintf("Streaming radio: %s", station.Name))
+		}
+	} else {
+		a.state.Queue = []models.Track{track}
+		a.state.CurrentTrack = &track
+		a.state.IsPlaying = true
+		a.logMessage(fmt.Sprintf("Streaming radio: %s", station.Name))
+	}
+}
+
+// queueRadioStation adds a radio station to the queue
+func (a *App) queueRadioStation(station models.RadioStation) {
+	track := models.Track{
+		ID:       station.ID,
+		Title:    station.Name,
+		Artist:   "Radio Stream",
+		Album:    "Internet Radio",
+		Path:     normalizeRadioURL(station.StreamURL),
+		Duration: 0,
+	}
+
+	if a.audioManager != nil {
+		a.audioManager.AddToQueue(track)
+		a.logMessage(fmt.Sprintf("Queued radio station: %s", station.Name))
+	} else {
+		a.state.Queue = append(a.state.Queue, track)
+		a.logMessage(fmt.Sprintf("Queued radio station: %s", station.Name))
+	}
 }
 
 // ArtistTracksLoadResult represents the result of loading artist tracks
@@ -1948,13 +2240,51 @@ func (a *App) handleQueueKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+tab":
 		a.prevTab()
 		return a, a.handleTabChange()
-	case "up":
+	case "up", "k":
+		if msg.String() == "k" && !a.isVimMode() {
+			break
+		}
 		if a.state.SelectedQueueIndex > 0 {
 			a.state.SelectedQueueIndex--
 		}
-	case "down":
+	case "down", "j":
+		if msg.String() == "j" && !a.isVimMode() {
+			break
+		}
 		if a.state.SelectedQueueIndex < len(a.state.Queue)-1 {
 			a.state.SelectedQueueIndex++
+		}
+	case "alt+up", "K":
+		idx := a.state.SelectedQueueIndex
+		if idx > 0 && idx < len(a.state.Queue) {
+			if a.audioManager != nil {
+				a.audioManager.MoveQueueTrack(idx, idx-1)
+			} else {
+				a.state.Queue[idx], a.state.Queue[idx-1] = a.state.Queue[idx-1], a.state.Queue[idx]
+			}
+			a.state.SelectedQueueIndex--
+		}
+	case "alt+down", "J":
+		idx := a.state.SelectedQueueIndex
+		if idx >= 0 && idx < len(a.state.Queue)-1 {
+			if a.audioManager != nil {
+				a.audioManager.MoveQueueTrack(idx, idx+1)
+			} else {
+				a.state.Queue[idx], a.state.Queue[idx+1] = a.state.Queue[idx+1], a.state.Queue[idx]
+			}
+			a.state.SelectedQueueIndex++
+		}
+	case "g", "home":
+		if msg.String() == "g" && !a.isVimMode() {
+			break
+		}
+		a.state.SelectedQueueIndex = 0
+	case "G", "end":
+		if msg.String() == "G" && !a.isVimMode() {
+			break
+		}
+		if len(a.state.Queue) > 0 {
+			a.state.SelectedQueueIndex = len(a.state.Queue) - 1
 		}
 	case "pgup":
 		// Move up by 25 items
@@ -2015,6 +2345,11 @@ type PlaylistsLoadResult struct {
 	Error     error
 }
 
+type RadioLoadResult struct {
+	Stations []models.RadioStation
+	Error    error
+}
+
 // Modal-specific message types
 type AlbumTracksModalResult struct {
 	Tracks []models.Track
@@ -2042,22 +2377,200 @@ type SearchResult struct {
 }
 
 
-// handleMouseEvent processes mouse input
-func (a *App) handleMouseEvent(_ tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Mouse support placeholder for Phase 2
+// handleMouseEvent processes mouse input for tab switching and list scrolling
+// handleMouseEvent processes mouse input for tab switching, item selection, and scrolling
+func (a *App) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	btnStr := msg.String()
+	isWheelUp := msg.Button == tea.MouseButtonWheelUp || msg.Type == tea.MouseWheelUp || strings.Contains(btnStr, "wheelup") || strings.Contains(btnStr, "wheel up")
+	isWheelDown := msg.Button == tea.MouseButtonWheelDown || msg.Type == tea.MouseWheelDown || strings.Contains(btnStr, "wheeldown") || strings.Contains(btnStr, "wheel down")
+	isLeftClick := msg.Button == tea.MouseButtonLeft || msg.Type == tea.MouseLeft || strings.Contains(btnStr, "left") || msg.Action == tea.MouseActionPress || msg.Action == tea.MouseActionRelease
+
+	if isWheelUp {
+		switch a.state.CurrentTab {
+		case models.HomeTab:
+			a.moveHomeSelectionUp()
+		case models.AlbumsTab:
+			if a.state.SelectedAlbumIndex > 0 {
+				a.state.SelectedAlbumIndex--
+				a.loadCurrentArtwork()
+			}
+		case models.ArtistsTab:
+			if a.state.SelectedArtistIndex > 0 {
+				a.state.SelectedArtistIndex--
+				a.loadCurrentArtwork()
+			}
+		case models.PlaylistsTab:
+			if a.state.SelectedPlaylistIndex > 0 {
+				a.state.SelectedPlaylistIndex--
+			}
+		case models.RadioTab:
+			if a.state.SelectedRadioIndex > 0 {
+				a.state.SelectedRadioIndex--
+			}
+		case models.QueueTab:
+			if a.state.SelectedQueueIndex > 0 {
+				a.state.SelectedQueueIndex--
+			}
+		}
+		return a, nil
+	}
+
+	if isWheelDown {
+		switch a.state.CurrentTab {
+		case models.HomeTab:
+			a.moveHomeSelectionDown()
+		case models.AlbumsTab:
+			if a.state.SelectedAlbumIndex < len(a.state.Albums)-1 {
+				a.state.SelectedAlbumIndex++
+				a.loadCurrentArtwork()
+			}
+		case models.ArtistsTab:
+			if a.state.SelectedArtistIndex < len(a.state.Artists)-1 {
+				a.state.SelectedArtistIndex++
+				a.loadCurrentArtwork()
+			}
+		case models.PlaylistsTab:
+			if a.state.SelectedPlaylistIndex < len(a.state.Playlists)-1 {
+				a.state.SelectedPlaylistIndex++
+			}
+		case models.RadioTab:
+			if a.state.SelectedRadioIndex < len(a.state.RadioStations)-1 {
+				a.state.SelectedRadioIndex++
+			}
+		case models.QueueTab:
+			if a.state.SelectedQueueIndex < len(a.state.Queue)-1 {
+				a.state.SelectedQueueIndex++
+			}
+		}
+		return a, nil
+	}
+
+	if isLeftClick {
+		if msg.Y == 0 {
+			// Click on header bar tabs
+			// Pill offsets: Home (1..6), Albums (7..14), Artists (15..23), Playlists (24..34), Radio (35..41), Queue (42..48), Config (49+)
+			x := msg.X
+			var newTab models.Tab
+			if x < 7 {
+				newTab = models.HomeTab
+			} else if x < 15 {
+				newTab = models.AlbumsTab
+			} else if x < 24 {
+				newTab = models.ArtistsTab
+			} else if x < 35 {
+				newTab = models.PlaylistsTab
+			} else if x < 42 {
+				newTab = models.RadioTab
+			} else if x < 49 {
+				newTab = models.QueueTab
+			} else {
+				newTab = models.ConfigTab
+			}
+			if newTab != a.state.CurrentTab {
+				a.state.CurrentTab = newTab
+				return a, a.handleTabChange()
+			}
+		} else if msg.Y >= 2 {
+			// Click inside list area
+			offset := msg.Y - 2
+			switch a.state.CurrentTab {
+			case models.AlbumsTab:
+				viewportStart := 0
+				maxVisible := 25
+				if len(a.state.Albums) > maxVisible {
+					viewportStart = a.state.SelectedAlbumIndex - maxVisible/2
+					if viewportStart < 0 {
+						viewportStart = 0
+					}
+					if viewportStart+maxVisible > len(a.state.Albums) {
+						viewportStart = len(a.state.Albums) - maxVisible
+					}
+				}
+				idx := viewportStart + offset
+				if idx >= 0 && idx < len(a.state.Albums) {
+					if a.state.SelectedAlbumIndex == idx {
+						return a, a.showAlbumModal(a.state.Albums[idx])
+					}
+					a.state.SelectedAlbumIndex = idx
+					a.loadCurrentArtwork()
+				}
+			case models.ArtistsTab:
+				viewportStart := 0
+				maxVisible := 25
+				if len(a.state.Artists) > maxVisible {
+					viewportStart = a.state.SelectedArtistIndex - maxVisible/2
+					if viewportStart < 0 {
+						viewportStart = 0
+					}
+					if viewportStart+maxVisible > len(a.state.Artists) {
+						viewportStart = len(a.state.Artists) - maxVisible
+					}
+				}
+				idx := viewportStart + offset
+				if idx >= 0 && idx < len(a.state.Artists) {
+					if a.state.SelectedArtistIndex == idx {
+						return a, a.showArtistModal(a.state.Artists[idx])
+					}
+					a.state.SelectedArtistIndex = idx
+					a.loadCurrentArtwork()
+				}
+			case models.PlaylistsTab:
+				viewportStart := 0
+				maxVisible := 25
+				if len(a.state.Playlists) > maxVisible {
+					viewportStart = a.state.SelectedPlaylistIndex - maxVisible/2
+					if viewportStart < 0 {
+						viewportStart = 0
+					}
+					if viewportStart+maxVisible > len(a.state.Playlists) {
+						viewportStart = len(a.state.Playlists) - maxVisible
+					}
+				}
+				idx := viewportStart + offset
+				if idx >= 0 && idx < len(a.state.Playlists) {
+					if a.state.SelectedPlaylistIndex == idx {
+						return a, a.showPlaylistModal(a.state.Playlists[idx])
+					}
+					a.state.SelectedPlaylistIndex = idx
+				}
+			case models.QueueTab:
+				viewportStart := 0
+				maxVisible := 25
+				if len(a.state.Queue) > maxVisible {
+					viewportStart = a.state.SelectedQueueIndex - maxVisible/2
+					if viewportStart < 0 {
+						viewportStart = 0
+					}
+					if viewportStart+maxVisible > len(a.state.Queue) {
+						viewportStart = len(a.state.Queue) - maxVisible
+					}
+				}
+				idx := viewportStart + offset
+				if idx >= 0 && idx < len(a.state.Queue) {
+					if a.state.SelectedQueueIndex == idx {
+						if a.audioManager != nil {
+							a.audioManager.PlayTrackAtIndex(idx)
+						}
+					}
+					a.state.SelectedQueueIndex = idx
+				}
+			}
+		}
+	}
+
 	return a, nil
 }
 
 // nextTab switches to the next tab
 func (a *App) nextTab() {
-	a.state.CurrentTab = models.Tab((int(a.state.CurrentTab) + 1) % 6)
+	a.state.CurrentTab = models.Tab((int(a.state.CurrentTab) + 1) % 7)
 }
 
 // prevTab switches to the previous tab
 func (a *App) prevTab() {
 	current := int(a.state.CurrentTab)
 	if current == 0 {
-		current = 6
+		current = 7
 	}
 	a.state.CurrentTab = models.Tab(current - 1)
 }
@@ -3067,24 +3580,113 @@ func (a *App) updateArtworkDisplayState() {
 	}
 }
 
-// loadCurrentArtwork loads artwork for the currently selected item
+// getAlbumForTrack resolves an Album object with cover art for a track
+func (a *App) getAlbumForTrack(track models.Track) models.Album {
+	coverArt := track.CoverArt
+	if coverArt == "" {
+		coverArt = track.AlbumID
+	}
+
+	album := models.Album{
+		ID:       track.AlbumID,
+		Name:     track.Album,
+		Artist:   track.Artist,
+		CoverArt: coverArt,
+	}
+
+	// Match loaded albums to resolve richer CoverArt metadata
+	if len(a.state.Albums) > 0 {
+		for _, alb := range a.state.Albums {
+			if (track.AlbumID != "" && alb.ID == track.AlbumID) || (track.Album != "" && alb.Name == track.Album) {
+				if alb.CoverArt != "" {
+					album.CoverArt = alb.CoverArt
+				}
+				if alb.ID != "" {
+					album.ID = alb.ID
+				}
+				break
+			}
+		}
+	}
+
+	// Also check Home tab albums
+	if album.CoverArt == "" || album.CoverArt == track.AlbumID {
+		for _, alb := range a.state.RecentlyAddedAlbums {
+			if (track.AlbumID != "" && alb.ID == track.AlbumID) || (track.Album != "" && alb.Name == track.Album) {
+				if alb.CoverArt != "" {
+					album.CoverArt = alb.CoverArt
+					break
+				}
+			}
+		}
+		for _, alb := range a.state.MostPlayedAlbums {
+			if (track.AlbumID != "" && alb.ID == track.AlbumID) || (track.Album != "" && alb.Name == track.Album) {
+				if alb.CoverArt != "" {
+					album.CoverArt = alb.CoverArt
+					break
+				}
+			}
+		}
+	}
+
+	return album
+}
+
+// loadCurrentArtwork loads artwork for the currently selected item or playing track
 func (a *App) loadCurrentArtwork() {
-	if a.artworkManager == nil || !a.state.ShowArtwork {
+	if a.artworkManager == nil {
+		return
+	}
+	if !a.state.ShowArtwork && !a.state.ZenMode {
 		return
 	}
 
-	// Load artwork based on current tab and selection
-	switch a.state.CurrentTab {
-	case models.AlbumsTab:
-		if len(a.state.Albums) > 0 && a.state.SelectedAlbumIndex < len(a.state.Albums) {
-			a.loadAlbumArtwork(a.state.Albums[a.state.SelectedAlbumIndex])
+	forceColor := a.state.ZenMode
+
+	if a.state.ZenMode {
+		// Priority 1: Currently playing track
+		if a.state.CurrentTrack != nil {
+			album := a.getAlbumForTrack(*a.state.CurrentTrack)
+			a.loadAlbumArtworkWithColor(album, forceColor)
+			return
 		}
-	// Note: Artist artwork removed - only Albums tab shows artwork
+
+		// Priority 2: Selected album in modal
+		if a.state.SelectedAlbum != nil {
+			a.loadAlbumArtworkWithColor(*a.state.SelectedAlbum, forceColor)
+			return
+		}
+
+		// Priority 3: Selected album on Albums tab
+		if len(a.state.Albums) > 0 && a.state.SelectedAlbumIndex < len(a.state.Albums) {
+			a.loadAlbumArtworkWithColor(a.state.Albums[a.state.SelectedAlbumIndex], forceColor)
+			return
+		}
+
+		// Priority 4: Home tab albums
+		if len(a.state.RecentlyAddedAlbums) > 0 {
+			a.loadAlbumArtworkWithColor(a.state.RecentlyAddedAlbums[0], forceColor)
+			return
+		}
+		if len(a.state.MostPlayedAlbums) > 0 {
+			a.loadAlbumArtworkWithColor(a.state.MostPlayedAlbums[0], forceColor)
+			return
+		}
+	} else {
+		// Standard artwork loading (AlbumsTab)
+		if a.state.CurrentTab == models.AlbumsTab && len(a.state.Albums) > 0 && a.state.SelectedAlbumIndex < len(a.state.Albums) {
+			a.loadAlbumArtworkWithColor(a.state.Albums[a.state.SelectedAlbumIndex], forceColor)
+		}
 	}
 }
 
 // loadAlbumArtwork loads artwork for a specific album (synchronous for now)
 func (a *App) loadAlbumArtwork(album models.Album) {
+	a.loadAlbumArtworkWithColor(album, false)
+}
+
+// loadAlbumArtworkWithColor loads artwork for a specific album, optionally forcing color
+func (a *App) loadAlbumArtworkWithColor(album models.Album, forceColor bool) {
 	if a.artworkManager == nil {
 		return
 	}
@@ -3092,7 +3694,7 @@ func (a *App) loadAlbumArtwork(album models.Album) {
 	a.state.LoadingArtwork = true
 	a.state.CurrentArtwork = "" // Clear previous artwork
 	
-	artwork, err := a.artworkManager.GetAlbumArtwork(album)
+	artwork, err := a.artworkManager.GetAlbumArtworkWithColor(album, forceColor)
 	if err != nil {
 		a.logMessage(fmt.Sprintf("Failed to load artwork for %s: %v", album.Name, err))
 		a.state.CurrentArtwork = ""

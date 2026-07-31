@@ -17,6 +17,7 @@ const (
 	LastFMPasswordField
 	ListenBrainzEnabledField
 	ListenBrainzTokenField
+	VimModeField
 	ShowArtworkField
 	ArtworkQualityField
 	ArtworkColorField
@@ -110,6 +111,8 @@ func (cfs *ConfigFormState) GetFieldLabel(field ConfigFormField) string {
         return "Enable ListenBrainz"
     case ListenBrainzTokenField:
         return "ListenBrainz Token"
+    case VimModeField:
+        return "Vim Keybindings"
     case ShowArtworkField:
         return "Show Artwork"
     case ArtworkQualityField:
@@ -131,7 +134,7 @@ func (cfs *ConfigFormState) GetFieldLabel(field ConfigFormField) string {
 
 // IsCheckboxField returns true if the field is a checkbox
 func (cfs *ConfigFormState) IsCheckboxField(field ConfigFormField) bool {
-	return field == LastFMEnabledField || field == ListenBrainzEnabledField || field == ShowArtworkField || field == ArtworkColorField
+	return field == LastFMEnabledField || field == ListenBrainzEnabledField || field == VimModeField || field == ShowArtworkField || field == ArtworkColorField
 }
 
 // GetCheckboxValue returns the checkbox value for boolean fields
@@ -141,6 +144,8 @@ func (cfs *ConfigFormState) GetCheckboxValue(field ConfigFormField) bool {
 		return cfs.Config.Scrobbling.LastFM.Enabled
 	case ListenBrainzEnabledField:
 		return cfs.Config.Scrobbling.ListenBrainz.Enabled
+	case VimModeField:
+		return cfs.Config.UI.VimMode
 	case ShowArtworkField:
 		return cfs.Config.UI.ShowAlbumArt
 	case ArtworkColorField:
@@ -181,6 +186,8 @@ func (cfs *ConfigFormState) ToggleCheckbox(field ConfigFormField) {
 		cfs.Config.Scrobbling.LastFM.Enabled = !cfs.Config.Scrobbling.LastFM.Enabled
 	case ListenBrainzEnabledField:
 		cfs.Config.Scrobbling.ListenBrainz.Enabled = !cfs.Config.Scrobbling.ListenBrainz.Enabled
+	case VimModeField:
+		cfs.Config.UI.VimMode = !cfs.Config.UI.VimMode
 	case ShowArtworkField:
 		cfs.Config.UI.ShowAlbumArt = !cfs.Config.UI.ShowAlbumArt
 	case ArtworkColorField:

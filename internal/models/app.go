@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -13,6 +14,7 @@ const (
 	AlbumsTab
 	ArtistsTab
 	PlaylistsTab
+	RadioTab
 	QueueTab
 	ConfigTab
 )
@@ -28,6 +30,8 @@ func (t Tab) String() string {
 		return "Artists"
 	case PlaylistsTab:
 		return "Playlists"
+	case RadioTab:
+		return "Radio"
 	case QueueTab:
 		return "Queue"
 	case ConfigTab:
@@ -69,6 +73,7 @@ type Track struct {
 	ArtistID  string `json:"artistId"`
 	Album     string `json:"album"`
 	AlbumID   string `json:"albumId"`
+	CoverArt  string `json:"coverArt,omitempty"`
 	Genre     string `json:"genre"`
 	Year      int    `json:"year"`
 	Duration  int    `json:"duration"`
@@ -117,13 +122,23 @@ var SortOptions = []SortOption{
 	{ID: "year", DisplayName: "Year", Applicable: []string{"albums"}},
 }
 
-// AppState represents the current state of the application
+// RadioStation represents an internet radio station from Navidrome
+type RadioStation struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	StreamURL   string `json:"streamUrl"`
+	HomePageURL string `json:"homePageUrl,omitempty"`
+}
+
+// AppState represents the complete state of the application
 type AppState struct {
+	Mu            sync.RWMutex
 	CurrentTab    Tab
 	IsPlaying     bool
 	CurrentTrack  *Track
 	Queue         []Track
 	Volume        int
+	Bitrate       int
 	Position      time.Duration
 	IsShuffleMode bool
 	ConfigForm    *ConfigFormState
@@ -132,17 +147,20 @@ type AppState struct {
 	Albums        []Album
 	Artists       []Artist
 	Playlists     []Playlist
+	RadioStations []RadioStation
 	
 	// UI state
 	LoadingAlbums    bool
 	LoadingArtists   bool
 	LoadingPlaylists bool
+	LoadingRadio     bool
 	LoadingError     string
 	
 	// Selection state
 	SelectedAlbumIndex    int
 	SelectedArtistIndex   int
 	SelectedPlaylistIndex int
+	SelectedRadioIndex    int
 	SelectedQueueIndex    int
 	
 	// Home tab navigation state
@@ -193,10 +211,14 @@ type AppState struct {
 	CurrentArtwork      string // ASCII art for currently selected item
 	LoadingArtwork      bool   // Whether artwork is being loaded
 	ShowArtwork         bool   // Whether to show artwork (based on config + space)
+	ZenMode             bool   // Whether Zen Mode is enabled (full-screen colored artwork)
 }
 
 // AddLogMessage adds a log message to the log buffer, keeping only the latest messages
 func (a *AppState) AddLogMessage(message string) {
+	a.Mu.Lock()
+	defer a.Mu.Unlock()
+
 	// Add timestamp prefix for better user experience
 	timestamp := time.Now().Format("15:04:05")
 	formattedMessage := fmt.Sprintf("[%s] %s", timestamp, message)
@@ -207,4 +229,14 @@ func (a *AppState) AddLogMessage(message string) {
 	if len(a.LogMessages) > 10 {
 		a.LogMessages = a.LogMessages[len(a.LogMessages)-10:]
 	}
+}
+
+// GetLogMessages returns a thread-safe copy of log messages
+func (a *AppState) GetLogMessages() []string {
+	a.Mu.Lock()
+	defer a.Mu.Unlock()
+
+	logs := make([]string, len(a.LogMessages))
+	copy(logs, a.LogMessages)
+	return logs
 }

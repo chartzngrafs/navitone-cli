@@ -78,6 +78,11 @@ func (v *MainView) Render() string {
 		v.height = 24
 	}
 
+	// Render Zen Mode (full-screen artwork only)
+	if v.state.ZenMode {
+		return v.renderZenMode()
+	}
+
 	var sections []string
 
 	// Header with tabs - always render header first
@@ -88,14 +93,8 @@ func (v *MainView) Render() string {
 	// Main content area
 	sections = append(sections, v.renderContent())
 
-	// Footer with key hints
-	sections = append(sections, v.renderFooter())
-
-	// Player controls section
-	sections = append(sections, v.renderPlayer())
-
-	// Log area at the bottom
-	sections = append(sections, v.renderLogArea())
+	// Streamlined Control Bar (Player, Timeline, Activity Log & Hotkeys)
+	sections = append(sections, v.renderControlBar())
 
 	// Modal overlays if active
 	content := strings.Join(sections, "\n")
@@ -146,16 +145,15 @@ func (v *MainView) renderContent() string {
 		height = 24
 	}
 
-    // Compute content height accounting for header (1), footer (1), player (3), log (2),
-    // and content box overhead (border top/bottom + padding top/bottom = 4)
-    // We need to be more conservative to ensure content never exceeds terminal height
-    contentHeight := height - 12  // Increased from 10 to 12 for more conservative sizing
+    // Compute content height dynamically accounting for header (1), content borders (2), and controlBar (5)
+    overhead := 8
+    contentHeight := height - overhead
     contentWidth := width - 2
 	if contentWidth < 10 {
 		contentWidth = 10 // Minimum content width
 	}
 	if contentHeight < 3 {
-		contentHeight = 3 // Reduced minimum to ensure it fits small terminals
+		contentHeight = 3 // Minimum content height for small terminals
 	}
 
 	content := v.styles.Content.
@@ -171,6 +169,8 @@ func (v *MainView) renderContent() string {
 		return content.Render(v.renderArtistsTab())
 	case models.PlaylistsTab:
 		return content.Render(v.renderPlaylistsTab())
+	case models.RadioTab:
+		return content.Render(v.renderRadioTab())
 	case models.QueueTab:
 		return content.Render(v.renderQueueTab())
 	case models.ConfigTab:
@@ -180,49 +180,7 @@ func (v *MainView) renderContent() string {
 	}
 }
 
-// renderFooter creates a simple footer with basic info (player module handles playback details)
-func (v *MainView) renderFooter() string {
-    // Context-aware footer with concise key hints
-    footer := v.footerHint()
 
-	// Ensure footer has a valid width
-	footerWidth := v.width
-	if footerWidth <= 0 {
-		footerWidth = 80 // Fallback width
-	}
-
-	return v.styles.Footer.Width(footerWidth).Render(footer)
-}
-
-// footerHint composes global and context-specific key hints
-func (v *MainView) footerHint() string {
-    global := "↑↓ Navigate • Tab Switch • Shift+S Sort • Shift+F Search • Shift+C Cava • q Quit"
-
-    if v.state.ShowAlbumModal || v.state.ShowArtistModal || v.state.ShowPlaylistModal || v.state.ShowSearchModal || v.state.ShowSortModal {
-        return global + " | Esc close • Enter select"
-    }
-
-    var ctx string
-    switch v.state.CurrentTab {
-    case models.HomeTab:
-        ctx = "Enter select • Shift+Enter queue • R Refresh"
-    case models.AlbumsTab:
-        ctx = "Enter view • R Refresh • A queue"
-    case models.ArtistsTab:
-        ctx = "Enter view • R Refresh • A-Z jump to letter"
-    case models.PlaylistsTab:
-        ctx = "Enter view • R Refresh • A queue"
-    case models.QueueTab:
-        ctx = "Space play • Alt+←/→ skip • Shift+↑/↓ volume • X remove • C clear"
-    case models.ConfigTab:
-        ctx = "Enter edit • F2 save • F3 test"
-    }
-
-    if ctx != "" {
-        return global + " | " + ctx
-    }
-    return global
-}
 
 // formatRow renders a consistent list row with an optional right-aligned metadata column
 func (v *MainView) formatRow(left string, right string, selected bool, leading string) string {
@@ -1032,6 +990,71 @@ func (v *MainView) renderPlaylistsTab() string {
 	return content.String()
 }
 
+func (v *MainView) renderRadioTab() string {
+	if v.state.LoadingRadio {
+		return "📻 Internet Radio Stations\n\n⏳ Loading radio stations..."
+	}
+
+	if v.state.LoadingError != "" {
+		return fmt.Sprintf("📻 Internet Radio Stations\n\n❌ Error: %s\n\nPress 'Shift+R' to retry", v.state.LoadingError)
+	}
+
+	if len(v.state.RadioStations) == 0 {
+		return "📻 Internet Radio Stations\n\nNo internet radio stations found.\n\nAdd radio stations in Navidrome Web UI under Settings -> Radio Stations."
+	}
+
+	var content strings.Builder
+	content.WriteString("📻 Internet Radio Stations\n\n")
+
+	startIdx := 0
+	endIdx := len(v.state.RadioStations)
+
+	maxVisible := 25
+	if len(v.state.RadioStations) > maxVisible {
+		viewportStart := v.state.SelectedRadioIndex - maxVisible/2
+		if viewportStart < 0 {
+			viewportStart = 0
+		}
+		if viewportStart+maxVisible > len(v.state.RadioStations) {
+			viewportStart = len(v.state.RadioStations) - maxVisible
+		}
+		startIdx = viewportStart
+		endIdx = viewportStart + maxVisible
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		station := v.state.RadioStations[i]
+		line := v.formatRadioLine(station, i == v.state.SelectedRadioIndex)
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+
+	if len(v.state.RadioStations) > 0 {
+		if len(v.state.RadioStations) > maxVisible {
+			content.WriteString(fmt.Sprintf("\nShowing %d-%d of %d radio stations",
+				startIdx+1, endIdx, len(v.state.RadioStations)))
+		} else {
+			content.WriteString(fmt.Sprintf("\n%d radio stations total", len(v.state.RadioStations)))
+		}
+	}
+
+	return content.String()
+}
+
+func (v *MainView) formatRadioLine(station models.RadioStation, selected bool) string {
+	var prefix string
+	if selected {
+		prefix = "→ "
+	} else {
+		prefix = "  "
+	}
+
+	left := fmt.Sprintf("%s📻 %s", prefix, station.Name)
+	right := station.HomePageURL
+
+	return v.formatRow(left, right, selected, prefix)
+}
+
 func (v *MainView) renderQueueTab() string {
 	var content strings.Builder
 	content.WriteString("🔄 Queue\n\n")
@@ -1163,6 +1186,7 @@ func (v *MainView) renderConfigTab() string {
 
 	// UI section
 	sections = append(sections, v.renderConfigSection("UI Settings", []models.ConfigFormField{
+		models.VimModeField,
 		models.ShowArtworkField,
 		models.ArtworkQualityField,
 		models.ArtworkColorField,
@@ -1299,126 +1323,188 @@ func (v *MainView) renderConfigFieldLine(field models.ConfigFormField, cf *model
     return v.styles.InactiveField.Render(line)
 }
 
-// renderPlayer creates the persistent player module
-func (v *MainView) renderPlayer() string {
-	// Ensure player has a valid width
-	playerWidth := v.width
-	if playerWidth <= 0 {
-		playerWidth = 80 // Fallback width
+// renderControlBar creates a unified, 3-line control panel combining player controls, timeline progress, and status/key hints
+func (v *MainView) renderControlBar() string {
+	width := v.width
+	if width <= 0 {
+		width = 80
+	}
+	boxWidth := width - 2
+	if boxWidth < 20 {
+		boxWidth = 20
+	}
+	innerWidth := boxWidth - 4 // account for borders & padding
+	if innerWidth <= 15 {
+		innerWidth = 15
 	}
 
-	playerStyle := v.styles.Player.Copy().Width(playerWidth)
+	boldStyle := lipgloss.NewStyle().Bold(true)
+	var controlLines []string
 
-	if v.state.CurrentTrack == nil {
-		// Show empty player with current state
-		var status []string
-
-		if v.state.IsPlaying {
-			status = append(status, "▶ Playing")
-		} else {
-			status = append(status, "⏸ Stopped")
-		}
-
-		status = append(status, fmt.Sprintf("Vol: %d%%", v.state.Volume))
-		status = append(status, fmt.Sprintf("Queue: %d", len(v.state.Queue)))
-
-		if v.state.IsShuffleMode {
-			status = append(status, "🔀 SHUFFLE ON")
-		} else {
-			status = append(status, "🔀 Shuffle off")
-		}
-
-		statusStr := strings.Join(status, " | ")
-		playerContent := fmt.Sprintf("♪ No track loaded | %s\nSPACE: Play/Pause | Alt+←/→: Skip | Alt+S: Shuffle | Shift+↑/↓: Volume", statusStr)
-		return playerStyle.Render(playerContent)
-	}
-
-	var parts []string
-
-	// Current track info
-	trackInfo := fmt.Sprintf("♪ %s - %s", v.state.CurrentTrack.Artist, v.state.CurrentTrack.Title)
-	if v.state.CurrentTrack.Album != "" {
-		trackInfo += fmt.Sprintf(" (%s)", v.state.CurrentTrack.Album)
-	}
-	parts = append(parts, trackInfo)
-
-	// Playback status and controls
-	var controls []string
+	// --- Line 1: Status Badge + Track Metadata + Player Stats ---
+	var statusBadge string
 	if v.state.IsPlaying {
-		controls = append(controls, "▶ Playing")
+		statusBadge = v.styles.PlayingIndicator.Render("▶ Playing")
+	} else if v.state.CurrentTrack != nil {
+		statusBadge = v.styles.PausedIndicator.Render("⏸ Paused")
 	} else {
-		controls = append(controls, "⏸ Paused")
+		statusBadge = v.styles.HelpText.Render("⏹ Stopped")
 	}
 
-	// Volume
-	controls = append(controls, fmt.Sprintf("Vol: %d%%", v.state.Volume))
+	var trackText string
+	if v.state.CurrentTrack != nil {
+		trackText = fmt.Sprintf("🎵 %s — %s", v.state.CurrentTrack.Title, v.state.CurrentTrack.Artist)
+		if v.state.CurrentTrack.Album != "" {
+			trackText += fmt.Sprintf(" (%s)", v.state.CurrentTrack.Album)
+		}
+	} else {
+		trackText = "♪ No track selected"
+	}
 
-	// Queue info
-	controls = append(controls, fmt.Sprintf("Queue: %d", len(v.state.Queue)))
-
-	// Shuffle indicator
+	// Player Stats
+	var statsParts []string
+	bitrate := 0
+	if v.state.CurrentTrack != nil && v.state.CurrentTrack.BitRate > 0 {
+		bitrate = v.state.CurrentTrack.BitRate
+	} else if v.state.Bitrate > 0 {
+		bitrate = v.state.Bitrate
+	}
+	if bitrate > 0 {
+		statsParts = append(statsParts, fmt.Sprintf("%d kbps", bitrate))
+	}
+	statsParts = append(statsParts, fmt.Sprintf("Vol: %d%%", v.state.Volume))
 	if v.state.IsShuffleMode {
-		controls = append(controls, "🔀 Shuffle")
+		statsParts = append(statsParts, "🔀 ON")
+	}
+	statsParts = append(statsParts, fmt.Sprintf("Q: %d", len(v.state.Queue)))
+
+	statsStr := v.styles.HelpText.Render(strings.Join(statsParts, " • "))
+
+	// Combine Line 1 with truncation/spacing
+	maxTrackWidth := innerWidth - lipgloss.Width(statusBadge) - lipgloss.Width(statsStr) - 4
+	if maxTrackWidth > 10 && utf8.RuneCountInString(trackText) > maxTrackWidth {
+		runes := []rune(trackText)
+		trackText = string(runes[:maxTrackWidth-3]) + "..."
+	}
+	line1Left := statusBadge + "  " + boldStyle.Render(trackText)
+	line1Spacer := innerWidth - lipgloss.Width(line1Left) - lipgloss.Width(statsStr)
+	if line1Spacer < 1 {
+		line1Spacer = 1
+	}
+	line1 := line1Left + strings.Repeat(" ", line1Spacer) + statsStr
+	controlLines = append(controlLines, line1)
+
+	// --- Line 2: Timeline Progress Bar ---
+	var currentSec, totalSec int
+	if v.state.CurrentTrack != nil && v.state.CurrentTrack.Duration > 0 {
+		currentSec = int(v.state.Position.Seconds())
+		totalSec = v.state.CurrentTrack.Duration
+	}
+	timeStart := fmt.Sprintf("%02d:%02d", currentSec/60, currentSec%60)
+	timeEnd := fmt.Sprintf("%02d:%02d", totalSec/60, totalSec%60)
+
+	// Dynamic bar width
+	barLen := innerWidth - len(timeStart) - len(timeEnd) - 6 // space around brackets
+	if barLen < 5 {
+		barLen = 5
+	}
+	progressBar := v.renderCustomProgressBar(barLen)
+	line2 := fmt.Sprintf("%s  %s  %s", v.styles.HelpText.Render(timeStart), progressBar, v.styles.HelpText.Render(timeEnd))
+	controlLines = append(controlLines, line2)
+
+	// --- Line 3: Latest Event Log (Left) + Contextual Shortcuts (Right) ---
+	latestLog := "⚡ Ready"
+	if len(v.state.LogMessages) > 0 {
+		latestLog = "⚡ " + v.state.LogMessages[len(v.state.LogMessages)-1]
 	}
 
-	// Dynamic progress bar
-	if v.state.CurrentTrack.Duration > 0 {
-		progressBar := v.renderProgressBar()
-		controls = append(controls, progressBar)
+	hotkeys := v.controlBarHotkeys()
+	hotkeysW := lipgloss.Width(hotkeys)
+	
+	var line3Left string
+	availForLog := innerWidth - hotkeysW - 2
+	if availForLog >= 12 {
+		logText := latestLog
+		if utf8.RuneCountInString(logText) > availForLog {
+			runes := []rune(logText)
+			logText = string(runes[:availForLog-3]) + "..."
+		}
+		line3Left = v.styles.HelpText.Render(logText)
 	}
 
-	controlStr := strings.Join(controls, " | ")
-	parts = append(parts, controlStr)
+	line3Right := v.styles.HelpText.Render(hotkeys)
+	line3Spacer := innerWidth - lipgloss.Width(line3Left) - lipgloss.Width(line3Right)
+	if line3Spacer < 1 {
+		line3Spacer = 1
+	}
+	line3 := line3Left + strings.Repeat(" ", line3Spacer) + line3Right
+	controlLines = append(controlLines, line3)
 
-	// Keybindings hint
-	parts = append(parts, "SPACE: Play/Pause | Alt+←/→: Skip | Alt+S: Shuffle | ←/→: Scrub | Shift+↑/↓: Volume")
+	panelContent := strings.Join(controlLines, "\n")
 
-	playerContent := strings.Join(parts, "\n")
-	return playerStyle.Render(playerContent)
+	// Render within rounded themed container
+	boxStyle := lipgloss.NewStyle().
+		Width(boxWidth).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(v.theme.Primary).
+		Padding(0, 1)
+
+	return boxStyle.Render(panelContent)
 }
 
-// renderLogArea creates the log area at the bottom showing recent events
-func (v *MainView) renderLogArea() string {
-	// Ensure log area has a valid width
-	logWidth := v.width
-	if logWidth <= 0 {
-		logWidth = 80 // Fallback width
+// controlBarHotkeys returns concise context-aware shortcuts for line 3 of the control bar
+func (v *MainView) controlBarHotkeys() string {
+	if v.state.ShowAlbumModal || v.state.ShowArtistModal || v.state.ShowPlaylistModal || v.state.ShowSearchModal || v.state.ShowSortModal {
+		return "Esc Close • Enter Select"
+	}
+	switch v.state.CurrentTab {
+	case models.HomeTab:
+		return "Enter Select • Shift+Enter Queue • Shift+R Refresh • / Search • Shift+Z Zen"
+	case models.AlbumsTab:
+		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+Z Zen"
+	case models.ArtistsTab:
+		return "Enter Albums • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+Z Zen"
+	case models.PlaylistsTab:
+		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+Z Zen"
+	case models.RadioTab:
+		return "Enter Play • A Queue • Shift+R Refresh • / Search • Shift+Z Zen"
+	case models.QueueTab:
+		return "Space Play • Alt+←/→ Skip • Shift+↑/↓ Vol • X Del • C Clear • Shift+Z Zen"
+	case models.ConfigTab:
+		return "Enter Edit • F2 Save • F3 Test • Shift+Z Zen"
+	default:
+		return "Space Play • Alt+←/→ Skip • / Search • Shift+Z Zen • q Quit"
+	}
+}
+
+// renderCustomProgressBar renders a progress bar of exact segment length
+func (v *MainView) renderCustomProgressBar(width int) string {
+	if width <= 0 {
+		return "[]"
+	}
+	if v.state.CurrentTrack == nil || v.state.CurrentTrack.Duration <= 0 {
+		return "[" + strings.Repeat("░", width) + "]"
 	}
 
-	logStyle := v.styles.LogArea.Copy().Width(logWidth)
-
-	if len(v.state.LogMessages) == 0 {
-		return logStyle.Render("Ready • Press SPACE to play/pause, Alt+S for shuffle, or navigate with Tab")
+	totalDuration := float64(v.state.CurrentTrack.Duration)
+	currentPosition := v.state.Position.Seconds()
+	if currentPosition > totalDuration {
+		currentPosition = totalDuration
 	}
 
-	// Show up to 2 most recent log messages
-	var logLines []string
-	messageCount := len(v.state.LogMessages)
-
-	if messageCount > 0 {
-		// Show the most recent messages (up to 2)
-		startIndex := 0
-		if messageCount > 2 {
-			startIndex = messageCount - 2
-		}
-
-		for i := startIndex; i < messageCount; i++ {
-			msg := v.state.LogMessages[i]
-			// Truncate very long messages to fit nicely
-			if len(msg) > v.width-4 {
-				msg = msg[:v.width-7] + "..."
-			}
-			logLines = append(logLines, msg)
-		}
+	progressRatio := currentPosition / totalDuration
+	filledSegments := int(progressRatio * float64(width))
+	if filledSegments > width {
+		filledSegments = width
 	}
 
-	// Pad to always show 2 lines for consistent layout
-	for len(logLines) < 2 {
-		logLines = append(logLines, "")
-	}
+	barFilled := strings.Repeat("▓", filledSegments)
+	barEmpty := strings.Repeat("░", width-filledSegments)
 
-	logContent := strings.Join(logLines, "\n")
-	return logStyle.Render(logContent)
+	styledFill := v.styles.ProgressFill.Render(barFilled)
+	styledEmpty := v.styles.ProgressBar.Render(barEmpty)
+
+	return "[" + styledFill + styledEmpty + "]"
 }
 
 // renderAlbumModalOverlay renders the album tracks modal overlay
@@ -1882,5 +1968,99 @@ func (v *MainView) renderAlbumArtwork() string {
 	content.WriteString(v.state.CurrentArtwork)
 
 	return content.String()
+}
+
+// renderZenMode renders a clean Zen Mode interface showing full-screen colored album art, playing track info, and playback progress
+func (v *MainView) renderZenMode() string {
+	var zenParts []string
+
+	// 1. Album Artwork (Color)
+	var artContent string
+	if v.state.LoadingArtwork {
+		artContent = "⏳ Loading artwork..."
+	} else if v.state.CurrentArtwork != "" {
+		artContent = v.state.CurrentArtwork
+	} else {
+		artContent = "[ No Album Art Available ]"
+	}
+	zenParts = append(zenParts, artContent)
+
+	boldStyle := lipgloss.NewStyle().Bold(true)
+
+	// 2. Track & Playing Info
+	var infoLines []string
+	if v.state.CurrentTrack != nil {
+		trackTitle := boldStyle.Render("🎵 " + v.state.CurrentTrack.Title)
+		artistAlbum := fmt.Sprintf("👤 %s", v.state.CurrentTrack.Artist)
+		if v.state.CurrentTrack.Album != "" {
+			artistAlbum += fmt.Sprintf(" • 💿 %s", v.state.CurrentTrack.Album)
+		}
+		if v.state.CurrentTrack.Year > 0 {
+			artistAlbum += fmt.Sprintf(" (%d)", v.state.CurrentTrack.Year)
+		}
+
+		infoLines = append(infoLines, trackTitle)
+		infoLines = append(infoLines, v.styles.HelpText.Render(artistAlbum))
+	} else if len(v.state.Albums) > 0 && v.state.SelectedAlbumIndex < len(v.state.Albums) {
+		alb := v.state.Albums[v.state.SelectedAlbumIndex]
+		albInfo := fmt.Sprintf("💿 %s • %s", alb.Artist, alb.Name)
+		if alb.Year > 0 {
+			albInfo += fmt.Sprintf(" (%d)", alb.Year)
+		}
+		infoLines = append(infoLines, boldStyle.Render(albInfo))
+	}
+	if len(infoLines) > 0 {
+		zenParts = append(zenParts, strings.Join(infoLines, "\n"))
+	}
+
+	// 3. Playing State & Progress Bar
+	var progressLines []string
+	statusStr := "⏹ Stopped"
+	if v.state.IsPlaying {
+		statusStr = "▶ Playing"
+	} else if v.state.CurrentTrack != nil {
+		statusStr = "⏸ Paused"
+	}
+
+	var metaParts []string
+	metaParts = append(metaParts, statusStr)
+	bitrate := 0
+	if v.state.CurrentTrack != nil && v.state.CurrentTrack.BitRate > 0 {
+		bitrate = v.state.CurrentTrack.BitRate
+	} else if v.state.Bitrate > 0 {
+		bitrate = v.state.Bitrate
+	}
+	if bitrate > 0 {
+		metaParts = append(metaParts, fmt.Sprintf("%d kbps", bitrate))
+	}
+	metaParts = append(metaParts, fmt.Sprintf("Vol: %d%%", v.state.Volume))
+	if v.state.IsShuffleMode {
+		metaParts = append(metaParts, "🔀 Shuffle")
+	}
+	progressLines = append(progressLines, v.styles.HelpText.Render(strings.Join(metaParts, "  •  ")))
+
+	if v.state.CurrentTrack != nil && v.state.CurrentTrack.Duration > 0 {
+		currentSec := int(v.state.Position.Seconds())
+		totalSec := v.state.CurrentTrack.Duration
+		timeStr := fmt.Sprintf("%02d:%02d / %02d:%02d", currentSec/60, currentSec%60, totalSec/60, totalSec%60)
+		progressBar := v.renderProgressBar()
+		progressLines = append(progressLines, fmt.Sprintf("%s %s", timeStr, progressBar))
+	}
+	zenParts = append(zenParts, strings.Join(progressLines, "\n"))
+
+	// 4. Subtle Zen Mode key hint
+	hint := v.styles.HelpText.Render("Shift+Z Exit Zen Mode • Space Play/Pause • Alt+←/→ Skip • Shift+↑/↓ Volume")
+	zenParts = append(zenParts, hint)
+
+	// Combine into a clean centered layout block
+	fullContent := strings.Join(zenParts, "\n\n")
+
+	return lipgloss.Place(
+		v.width,
+		v.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		fullContent,
+	)
 }
 

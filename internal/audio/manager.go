@@ -67,6 +67,11 @@ func (m *Manager) RemoveFromQueue(index int) {
 	m.mpvManager.RemoveFromQueue(index)
 }
 
+// MoveQueueTrack moves a track from fromIndex to toIndex in the queue
+func (m *Manager) MoveQueueTrack(fromIndex, toIndex int) {
+	m.mpvManager.MoveQueueTrack(fromIndex, toIndex)
+}
+
 // ClearQueue removes all tracks from the queue
 func (m *Manager) ClearQueue() {
 	m.mpvManager.ClearQueue()
@@ -165,6 +170,14 @@ func (m *Manager) GetPosition() time.Duration {
 // GetDuration returns the duration of the current track
 func (m *Manager) GetDuration() time.Duration {
 	return m.mpvManager.GetDuration()
+}
+
+// GetBitrate returns the current audio bitrate in kbps
+func (m *Manager) GetBitrate() int {
+	if m.mpvManager != nil {
+		return m.mpvManager.GetBitrate()
+	}
+	return 0
 }
 
 // Close closes the audio manager and releases resources

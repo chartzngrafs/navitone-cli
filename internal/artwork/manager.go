@@ -43,15 +43,23 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 
 // GetAlbumArtwork retrieves ASCII artwork for an album
 func (m *Manager) GetAlbumArtwork(album models.Album) (string, error) {
-	// Check if artwork is enabled
-	if !m.converter.IsEnabled() {
+	return m.GetAlbumArtworkWithColor(album, false)
+}
+
+// GetAlbumArtworkWithColor retrieves ASCII artwork for an album, optionally forcing color
+func (m *Manager) GetAlbumArtworkWithColor(album models.Album, forceColor bool) (string, error) {
+	if !forceColor && !m.converter.IsEnabled() {
 		return "", fmt.Errorf("artwork display is disabled")
 	}
 
-	// Use Navidrome cover art if available
-	if album.CoverArt != "" {
-		coverURL := m.buildNavidromeCoverArtURL(album.CoverArt)
-		return m.getArtworkFromURL(coverURL, album.ID)
+	coverArtID := album.CoverArt
+	if coverArtID == "" {
+		coverArtID = album.ID
+	}
+
+	if coverArtID != "" {
+		coverURL := m.buildNavidromeCoverArtURL(coverArtID)
+		return m.getArtworkFromURLWithColor(coverURL, album.ID, forceColor)
 	}
 
 	// Fallback to MusicBrainz
@@ -60,18 +68,24 @@ func (m *Manager) GetAlbumArtwork(album models.Album) (string, error) {
 		return "", fmt.Errorf("no cover art available from any source: %w", err)
 	}
 
-	return m.getArtworkFromURL(coverURL, album.ID)
+	return m.getArtworkFromURLWithColor(coverURL, album.ID, forceColor)
 }
-
 
 // getArtworkFromURL converts artwork from URL with caching
 func (m *Manager) getArtworkFromURL(url, id string) (string, error) {
+	return m.getArtworkFromURLWithColor(url, id, false)
+}
+
+// getArtworkFromURLWithColor converts artwork from URL with caching and forceColor support
+func (m *Manager) getArtworkFromURLWithColor(url, id string, forceColor bool) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	useColor := m.config.UI.ArtworkColor || forceColor
+
 	// Generate cache key
 	width, height := m.converter.GetArtworkSize()
-	cacheKey := GetCacheKey(url, width, height)
+	cacheKey := GetCacheKey(url, width, height, useColor)
 
 	// Try to get from cache first
 	if cachedArt, found := m.cache.Get(cacheKey); found {
@@ -79,7 +93,7 @@ func (m *Manager) getArtworkFromURL(url, id string) (string, error) {
 	}
 
 	// Convert from URL
-	ascii, err := m.converter.ConvertFromURL(url)
+	ascii, err := m.converter.ConvertFromURLWithColor(url, forceColor)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert artwork: %w", err)
 	}

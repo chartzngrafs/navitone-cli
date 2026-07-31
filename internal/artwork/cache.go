@@ -109,6 +109,6 @@ func (c *Cache) Clean() error {
 }
 
 // GetCacheKey generates a cache key for an artwork URL
-func GetCacheKey(url string, width, height int) string {
-	return fmt.Sprintf("%s_%dx%d", url, width, height)
+func GetCacheKey(url string, width, height int, color bool) string {
+	return fmt.Sprintf("%s_%dx%d_c%t", url, width, height, color)
 }
