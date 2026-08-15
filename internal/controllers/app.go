@@ -14,6 +14,7 @@ import (
 	"navitone-cli/internal/audio"
 	"navitone-cli/internal/config"
 	"navitone-cli/internal/models"
+	"navitone-cli/internal/utils"
 	"navitone-cli/internal/views"
 	"navitone-cli/pkg/navidrome"
 	"navitone-cli/pkg/scrobbling"
@@ -110,12 +111,14 @@ func NewApp() *App {
             "error":     cfg.Theme.Colors.Error,
         }
 
-        theme = views.NewThemeFromConfigStruct(
+        theme = views.NewThemeFromConfigStructWithCavaPalette(
             cfg.Theme.Name,
             cfg.Theme.Source,
             cfg.Theme.Background,
             cfg.Theme.Foreground,
             colors,
+            cfg.Theme.Colors.Palette,
+            cfg.Theme.Colors.CavaPalette,
         )
     } else {
         // Fallback to legacy UI theme system for users without theme sync
@@ -133,6 +136,9 @@ func NewApp() *App {
 
     // Initialize the view with the proper theme
     app.view = views.NewMainViewWithDirectTheme(state, theme, styles)
+
+    // Automatically check and load live Omarchy Quattro desktop theme on startup
+    app.reloadOmarchyTheme()
 
     // Initialize Navidrome client if config is valid
     app.initializeNavidromeClient()
@@ -202,6 +208,7 @@ func (a *App) updateAudioState(state *models.AppState) {
 		isPlaying := a.audioManager.IsPlaying()
 		isShuffle := a.audioManager.IsShuffleEnabled()
 		pos := a.audioManager.GetPosition()
+		dur := a.audioManager.GetDuration()
 		bitrate := a.audioManager.GetBitrate()
 
 		// Safely update AppState with fetched values
@@ -217,6 +224,24 @@ func (a *App) updateAudioState(state *models.AppState) {
 			currentTrack.BitRate = bitrate
 		}
 		a.state.Mu.Unlock()
+
+		// Export status for desktop plugins (e.g. Omarchy top bar)
+		var title, artist, album string
+		if currentTrack != nil {
+			title = currentTrack.Title
+			artist = currentTrack.Artist
+			album = currentTrack.Album
+		}
+		_ = utils.ExportPlaybackStatus(utils.PlaybackStatusExport{
+			IsPlaying:       isPlaying,
+			Title:           title,
+			Artist:          artist,
+			Album:           album,
+			Bitrate:         bitrate,
+			PositionSeconds: int(pos.Seconds()),
+			DurationSeconds: int(dur.Seconds()),
+			UpdatedAt:       time.Now().Unix(),
+		})
 
 		// Check if track changed (ID or Title) and reload artwork if Zen mode or ShowArtwork is active
 		if (prevTrack == nil && currentTrack != nil) || (prevTrack != nil && currentTrack == nil) ||
@@ -235,6 +260,7 @@ func (a *App) logMessage(message string) {
 
 // cleanup handles graceful shutdown of all resources
 func (a *App) cleanup() tea.Cmd {
+	utils.ClearPlaybackStatus()
 	a.stopCavaPipe()
 	if a.audioManager != nil {
 		a.audioManager.Close()
@@ -244,6 +270,7 @@ func (a *App) cleanup() tea.Cmd {
 
 // Cleanup handles graceful shutdown of all resources (public version for external use)
 func (a *App) Cleanup() {
+	utils.ClearPlaybackStatus()
 	a.stopCavaPipe()
 	if a.audioManager != nil {
 		a.audioManager.Close()
@@ -686,7 +713,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.updateArtworkDisplayState()
 		}
 		return a, nil
-	case "shift+r":
+	case "R", "shift+r":
 		// Global: Shift+R - Reload Omarchy theme colors
 		a.reloadOmarchyTheme()
 		return a, nil
@@ -1571,7 +1598,7 @@ func (a *App) loadRadioData() tea.Cmd {
 			modelStations[i] = models.RadioStation{
 				ID:          s.ID,
 				Name:        s.Name,
-				StreamURL:   s.StreamURL,
+				StreamURL:   utils.NormalizeRadioURL(s.StreamURL),
 				HomePageURL: s.HomePageURL,
 			}
 		}
@@ -2190,12 +2217,9 @@ func (a *App) handleRadioKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// normalizeRadioURL fixes known deprecated stream URL formats (such as Nightride FM .m4a -> .mp3)
+// normalizeRadioURL fixes known deprecated or un-extensioned stream URL formats (such as Nightride FM streams)
 func normalizeRadioURL(rawURL string) string {
-	if strings.Contains(rawURL, "nightride.fm") && strings.HasSuffix(rawURL, ".m4a") {
-		return strings.TrimSuffix(rawURL, ".m4a") + ".mp3"
-	}
-	return rawURL
+	return utils.NormalizeRadioURL(rawURL)
 }
 
 // playRadioStation starts streaming a radio station immediately
@@ -3739,112 +3763,5 @@ func (a *App) loadAlbumArtworkWithColor(album models.Album, forceColor bool) {
 	}
 	
 	a.state.LoadingArtwork = false
-}
-
-// reloadOmarchyTheme checks and reloads Omarchy theme colors directly from system config or config.toml
-func (a *App) reloadOmarchyTheme() {
-	home, err := os.UserHomeDir()
-	if err == nil {
-		colorsPath := filepath.Join(home, ".config", "omarchy", "current", "theme", "colors.toml")
-		if data, err := os.ReadFile(colorsPath); err == nil {
-			colorsMap := make(map[string]string)
-			lines := strings.Split(string(data), "\n")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "#") {
-					continue
-				}
-				parts := strings.SplitN(line, "=", 2)
-				if len(parts) == 2 {
-					key := strings.TrimSpace(parts[0])
-					val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
-					colorsMap[key] = val
-				}
-			}
-
-			if len(colorsMap) > 0 {
-				themeColors := map[string]string{}
-
-				if accent, ok := colorsMap["accent"]; ok {
-					themeColors["accent"] = accent
-				} else if c4, ok := colorsMap["color4"]; ok {
-					themeColors["accent"] = c4
-				}
-
-				if primary, ok := colorsMap["color4"]; ok {
-					themeColors["primary"] = primary
-				} else if accent, ok := colorsMap["accent"]; ok {
-					themeColors["primary"] = accent
-				}
-
-				if secondary, ok := colorsMap["color5"]; ok {
-					themeColors["secondary"] = secondary
-				} else if c2, ok := colorsMap["color2"]; ok {
-					themeColors["secondary"] = c2
-				}
-
-				if success, ok := colorsMap["color2"]; ok {
-					themeColors["success"] = success
-				}
-
-				if warning, ok := colorsMap["color3"]; ok {
-					themeColors["warning"] = warning
-				}
-
-				if errColor, ok := colorsMap["color1"]; ok {
-					themeColors["error"] = errColor
-				}
-
-				bg := colorsMap["background"]
-				fg := colorsMap["foreground"]
-
-				themeName := "omarchy-theme"
-				namePath := filepath.Join(home, ".config", "omarchy", "current", "theme.name")
-				if nBytes, nErr := os.ReadFile(namePath); nErr == nil {
-					themeName = strings.TrimSpace(string(nBytes))
-				}
-
-				newTheme := views.NewThemeFromConfigStruct(
-					themeName,
-					"omarchy",
-					bg,
-					fg,
-					themeColors,
-				)
-				newStyles := views.NewThemedStyles(newTheme)
-				a.view.SetTheme(newTheme, newStyles)
-				a.logMessage(fmt.Sprintf("Refreshed Omarchy theme: %s", themeName))
-				return
-			}
-		}
-	}
-
-	// Fallback to reloading config.toml
-	cfg, err := config.Load()
-	if err == nil && cfg != nil {
-		var newTheme views.Theme
-		if cfg.Theme.Name != "" && cfg.Theme.Colors.Accent != "" {
-			colors := map[string]string{
-				"accent":    cfg.Theme.Colors.Accent,
-				"primary":   cfg.Theme.Colors.Primary,
-				"secondary": cfg.Theme.Colors.Secondary,
-				"success":   cfg.Theme.Colors.Success,
-				"warning":   cfg.Theme.Colors.Warning,
-				"error":     cfg.Theme.Colors.Error,
-			}
-			newTheme = views.NewThemeFromConfigStruct(
-				cfg.Theme.Name,
-				cfg.Theme.Source,
-				cfg.Theme.Background,
-				cfg.Theme.Foreground,
-				colors,
-			)
-		} else {
-			newTheme = views.NewTheme(cfg.UI.Theme, cfg.UI.AccentIndex)
-		}
-		newStyles := views.NewThemedStyles(newTheme)
-		a.view.SetTheme(newTheme, newStyles)
-		a.logMessage(fmt.Sprintf("Refreshed theme: %s", newTheme.Name))
-	}
 }
 

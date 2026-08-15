@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Navitone Omarchy Theme Color Extractor
-Extracts colors from current Omarchy theme and outputs TOML config for Navitone.
+Navitone Omarchy Quattro Theme Color Extractor
+Extracts colors from current Omarchy/Omarchy Quattro theme and outputs TOML config for Navitone.
+Supports Omarchy 4.0 Quattro 24-color palettes, Base24 schemes, and Cava theme gradient colors.
 """
 
 import json
@@ -10,7 +11,6 @@ import sys
 import re
 from pathlib import Path
 
-# Simple TOML writer since toml module might not be available
 def simple_toml_dump(data, f):
     """Simple TOML writer for our specific use case."""
     for section_name, section_data in data.items():
@@ -18,402 +18,330 @@ def simple_toml_dump(data, f):
         if isinstance(section_data, dict):
             for key, value in section_data.items():
                 if isinstance(value, dict):
-                    # Nested section
                     f.write(f"\n[{section_name}.{key}]\n")
                     for nested_key, nested_value in value.items():
-                        if isinstance(nested_value, str):
+                        if isinstance(nested_value, list):
+                            formatted_list = ", ".join(f'"{v}"' for v in nested_value)
+                            f.write(f'{nested_key} = [{formatted_list}]\n')
+                        elif isinstance(nested_value, str):
                             f.write(f'{nested_key} = "{nested_value}"\n')
                         else:
                             f.write(f'{nested_key} = {nested_value}\n')
+                elif isinstance(value, list):
+                    formatted_list = ", ".join(f'"{v}"' for v in value)
+                    f.write(f'{key} = [{formatted_list}]\n')
                 elif isinstance(value, str):
                     f.write(f'{key} = "{value}"\n')
                 else:
                     f.write(f'{key} = {value}\n')
         f.write("\n")
 
-def simple_toml_load(f):
-    """Simple TOML loader for our specific use case."""
-    content = f.read()
-    data = {}
-    current_section = None
-    current_nested = None
+def get_current_theme_name():
+    """Get the name of the current Omarchy theme."""
+    home = Path.home()
+    theme_name_files = [
+        home / '.local' / 'state' / 'omarchy' / 'current' / 'theme.name',
+        home / '.local' / 'state' / 'omarchy' / 'theme.name',
+        home / '.local' / 'state' / 'omarchy' / 'active_theme',
+        home / '.local' / 'state' / 'omarchy' / 'current' / 'theme' / 'theme.name',
+        home / '.config' / 'omarchy' / 'current' / 'theme.name',
+        home / '.config' / 'omarchy' / 'theme.name',
+        home / '.config' / 'omarchy' / 'active_theme',
+        home / '.config' / 'omarchy' / 'current' / 'theme' / 'theme.name',
+    ]
 
-    for line in content.split('\n'):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
+    for f in theme_name_files:
+        if f.exists():
+            try:
+                name = f.read_text().strip()
+                if name:
+                    return name
+            except Exception:
+                pass
 
-        # Section headers
-        if line.startswith('[') and line.endswith(']'):
-            section_name = line[1:-1]
-            if '.' in section_name:
-                parts = section_name.split('.', 1)
-                current_section = parts[0]
-                current_nested = parts[1]
-                if current_section not in data:
-                    data[current_section] = {}
-                data[current_section][current_nested] = {}
-            else:
-                current_section = section_name
-                current_nested = None
-                data[current_section] = {}
-            continue
+    current_theme_path = home / '.local' / 'state' / 'omarchy' / 'current' / 'theme'
+    if current_theme_path.exists():
+        if current_theme_path.is_symlink():
+            return Path(current_theme_path.readlink()).name
+        if current_theme_path.is_dir():
+            return "current"
 
-        # Key-value pairs
-        if '=' in line and current_section:
-            key, value = line.split('=', 1)
-            key = key.strip()
-            value = value.strip().strip('"\'')
-
-            if current_nested:
-                data[current_section][current_nested][key] = value
-            else:
-                data[current_section][key] = value
-
-    return data
+    return None
 
 def get_current_theme_path():
-    """Get the path to the current Omarchy theme.
+    """Get the path to the current Omarchy theme directory."""
+    home = Path.home()
 
-    Supports both old (symlink) and new (directory) Omarchy structures:
-    - Old: ~/.config/omarchy/current/theme is a symlink to the theme directory
-    - New: ~/.config/omarchy/current/theme is a directory containing theme files
-    """
-    current_theme_path = Path.home() / '.config' / 'omarchy' / 'current' / 'theme'
+    candidates = [
+        home / '.local' / 'state' / 'omarchy' / 'current' / 'theme',
+        home / '.local' / 'state' / 'omarchy' / 'current',
+        home / '.config' / 'omarchy' / 'current' / 'theme',
+        home / '.config' / 'omarchy' / 'current',
+        home / '.config' / 'omarchy' / 'theme',
+    ]
 
-    # New structure: theme is a directory
-    if current_theme_path.exists() and current_theme_path.is_dir():
-        return current_theme_path
+    for cand in candidates:
+        if cand.exists():
+            if cand.is_symlink():
+                return Path(cand.readlink())
+            if cand.is_dir():
+                return cand
 
-    # Old structure: theme is a symlink
-    if current_theme_path.exists() and current_theme_path.is_symlink():
-        return Path(current_theme_path.readlink())
+    theme_name = get_current_theme_name()
+    if theme_name:
+        named_paths = [
+            home / '.config' / 'omarchy' / 'themes' / theme_name,
+            home / '.local' / 'share' / 'omarchy' / 'themes' / theme_name,
+        ]
+        for p in named_paths:
+            if p.exists() and p.is_dir():
+                return p
 
-    return None
-
-
-def get_current_theme_name():
-    """Get the name of the current Omarchy theme.
-
-    Supports both old (symlink) and new (theme.name file) Omarchy structures.
-    """
-    # New structure: read from theme.name file
-    theme_name_file = Path.home() / '.config' / 'omarchy' / 'current' / 'theme.name'
-    if theme_name_file.exists():
-        try:
-            return theme_name_file.read_text().strip()
-        except Exception:
-            pass
-
-    # Old structure: get from symlink target
-    current_theme_path = Path.home() / '.config' / 'omarchy' / 'current' / 'theme'
-    if current_theme_path.exists() and current_theme_path.is_symlink():
-        return Path(current_theme_path.readlink()).name
-
-    # Fallback: use directory name if theme is a directory
-    if current_theme_path.exists() and current_theme_path.is_dir():
-        return "current"
+    themes_dir = home / '.config' / 'omarchy' / 'themes'
+    if themes_dir.exists() and themes_dir.is_dir():
+        for t_dir in themes_dir.iterdir():
+            if t_dir.is_dir() and ((t_dir / 'colors.toml').exists() or (t_dir / 'custom_theme.json').exists() or (t_dir / 'alacritty.toml').exists()):
+                return t_dir
 
     return None
-
-def parse_toml_colors(toml_path):
-    """Parse colors from TOML file with comprehensive parsing like Cava app."""
-    normal_colors = {}
-    bright_colors = {}
-    primary_colors = {}
-    current_section = None
-
-    try:
-        with open(toml_path, 'r') as f:
-            content = f.read()
-
-        # Parse line by line, tracking sections
-        for line in content.split('\n'):
-            line = line.strip()
-
-            # Track TOML sections
-            if line.startswith('[colors.normal]'):
-                current_section = 'normal'
-                continue
-            elif line.startswith('[colors.bright]'):
-                current_section = 'bright'
-                continue
-            elif line.startswith('[colors.primary]'):
-                current_section = 'primary'
-                continue
-            elif line.startswith('[') and 'colors' not in line:
-                current_section = None  # Other section
-                continue
-            elif line.startswith('[colors.'):
-                current_section = 'other'  # Other color section
-                continue
-
-            # Skip commented lines
-            if line.startswith('#'):
-                continue
-
-            # Look for color assignments (handle inline comments)
-            if '=' in line and ('0x' in line or '#' in line):
-                key, value = line.split('=', 1)
-                key = key.strip()
-                value = value.strip().strip('"\'')
-
-                # Extract hex color in either #xxxxxx or 0xxxxxxx format
-                # Handle inline comments by taking first color found
-                hex_match = re.search(r'(?:#|0x)([a-fA-F0-9]{6})', value)
-                if hex_match:
-                    # Convert to standard #xxxxxx format
-                    clean_color = '#' + hex_match.group(1)
-
-                    # Extract just the color name
-                    color_name = key.split('.')[-1] if '.' in key else key
-
-                    # Store in appropriate section
-                    if current_section == 'normal':
-                        normal_colors[color_name] = clean_color
-                    elif current_section == 'bright':
-                        bright_colors[color_name] = clean_color
-                    elif current_section == 'primary':
-                        primary_colors[color_name] = clean_color
-
-    except Exception as e:
-        print(f"Error parsing TOML: {e}")
-
-    # Prefer normal colors over bright colors for a more muted palette (like Cava)
-    colors = normal_colors.copy()
-
-    # Fill in missing colors with bright variants if needed
-    for color_name in ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan']:
-        if color_name not in colors and color_name in bright_colors:
-            colors[color_name] = bright_colors[color_name]
-
-    # Debug output when both types are found
-    if normal_colors and bright_colors:
-        print(f"Found both normal and bright colors, prioritizing normal colors")
-
-    return colors, primary_colors
 
 def parse_colors_toml(colors_path):
-    """Parse the new Omarchy colors.toml format.
-
-    The new format has a simpler structure with direct color assignments:
-    accent = "#e68e0d"
-    foreground = "#bebebe"
-    background = "#121212"
-    color0 = "#333333" (black)
-    color1 = "#D35F5F" (red)
-    color2 = "#FFC107" (green)
-    ...
-    """
-    colors = {}
+    """Parse Omarchy Quattro colors.toml format including 24 colors & Base24 schemes."""
+    raw_colors = {}
     background = '#282a36'
     foreground = '#f8f8f2'
+    color_indices = {}
+    base_indices = {}
 
     try:
-        with open(colors_path, 'r') as f:
+        with open(colors_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
         for line in content.split('\n'):
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith('#') or (line.startswith('[') and line.endswith(']')):
                 continue
 
             if '=' in line:
                 key, value = line.split('=', 1)
                 key = key.strip()
-                value = value.strip().strip('"\'')
+                if '.' in key:
+                    key = key.split('.')[-1].strip()
 
-                # Extract hex color
-                hex_match = re.search(r'#([a-fA-F0-9]{6})', value)
+                hex_match = re.search(r'(?:#|0x)([a-fA-F0-9]{6}|[a-fA-F0-9]{3})\b', value)
                 if hex_match:
-                    clean_color = '#' + hex_match.group(1)
+                    hex_str = hex_match.group(1).upper()
+                    if len(hex_str) == 3:
+                        clean_color = '#' + ''.join(c * 2 for c in hex_str)
+                    else:
+                        clean_color = '#' + hex_str
+
+                    raw_colors[key] = clean_color
 
                     if key == 'background':
                         background = clean_color
                     elif key == 'foreground':
                         foreground = clean_color
-                    elif key == 'accent':
-                        colors['accent'] = clean_color
-                    elif key == 'color1':  # red
-                        colors['red'] = clean_color
-                    elif key == 'color2':  # green
-                        colors['green'] = clean_color
-                    elif key == 'color3':  # yellow
-                        colors['yellow'] = clean_color
-                    elif key == 'color4':  # blue
-                        colors['blue'] = clean_color
-                    elif key == 'color5':  # magenta
-                        colors['magenta'] = clean_color
-                    elif key == 'color6':  # cyan
-                        colors['cyan'] = clean_color
 
-        return colors, background, foreground
+                    if key.startswith('color') and key[5:].isdigit():
+                        idx = int(key[5:])
+                        color_indices[idx] = clean_color
+
+                    if key.startswith('base') and len(key) == 6:
+                        try:
+                            idx = int(key[4:], 16)
+                            base_indices[idx] = clean_color
+                        except ValueError:
+                            pass
+
+        palette = []
+        if color_indices:
+            for k in sorted(color_indices.keys()):
+                palette.append(color_indices[k])
+        elif base_indices:
+            for k in sorted(base_indices.keys()):
+                palette.append(base_indices[k])
+
+        if len(palette) <= 1:
+            for k in ['accent', 'primary', 'secondary', 'success', 'warning', 'error']:
+                if k in raw_colors and raw_colors[k] not in palette:
+                    palette.append(raw_colors[k])
+
+        accent = raw_colors.get('accent', raw_colors.get('color4', raw_colors.get('color12', '#6272a4')))
+        primary = raw_colors.get('primary', raw_colors.get('color4', raw_colors.get('color6', accent)))
+        secondary = raw_colors.get('secondary', raw_colors.get('color5', raw_colors.get('color13', '#ff79c6')))
+        success = raw_colors.get('success', raw_colors.get('color2', raw_colors.get('color10', '#50fa7b')))
+        warning = raw_colors.get('warning', raw_colors.get('color3', raw_colors.get('color11', '#f1fa8c')))
+        error = raw_colors.get('error', raw_colors.get('color1', raw_colors.get('color9', '#ff5555')))
+
+        colors = {
+            'accent': accent,
+            'primary': primary,
+            'secondary': secondary,
+            'success': success,
+            'warning': warning,
+            'error': error,
+        }
+
+        return colors, palette, background, foreground
 
     except Exception as e:
         print(f"Error parsing colors.toml: {e}")
-        return None, background, foreground
+        return None, [], background, foreground
 
+def parse_cava_theme(theme_path):
+    """Parse gradient_color_1 .. gradient_color_N from cava_theme."""
+    candidates = [
+        theme_path / 'cava_theme',
+        theme_path / 'theme' / 'cava_theme',
+        Path.home() / '.local' / 'state' / 'omarchy' / 'current' / 'theme' / 'cava_theme',
+        Path.home() / '.config' / 'omarchy' / 'current' / 'theme' / 'cava_theme',
+    ]
+    for c_path in candidates:
+        if c_path.exists():
+            try:
+                with open(c_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                grad_map = {}
+                for line in content.split('\n'):
+                    line = line.strip()
+                    if line.startswith('#') or line.startswith(';'):
+                        continue
+                    if '=' in line and ('#' in line or '0x' in line):
+                        k, v = line.split('=', 1)
+                        k = k.strip()
+                        if 'gradient_color_' in k:
+                            num_str = k.split('gradient_color_')[-1].strip()
+                            if num_str.isdigit():
+                                m = re.search(r'(?:#|0x)([a-fA-F0-9]{6}|[a-fA-F0-9]{3})\b', v)
+                                if m:
+                                    hex_str = m.group(1).upper()
+                                    clean_color = '#' + (''.join(c * 2 for c in hex_str) if len(hex_str) == 3 else hex_str)
+                                    grad_map[int(num_str)] = clean_color
+                if grad_map:
+                    return [grad_map[k] for k in sorted(grad_map.keys())]
+            except Exception:
+                pass
+    return []
 
 def extract_theme_colors(theme_path):
     """Extract relevant colors from the Omarchy theme."""
     theme_name = get_current_theme_name() or theme_path.name
+    cava_palette = parse_cava_theme(theme_path)
 
-    # First try to read from colors.toml (new Omarchy format)
-    colors_toml_path = theme_path / 'colors.toml'
-    if colors_toml_path.exists():
-        parsed_colors, background, foreground = parse_colors_toml(colors_toml_path)
-        if parsed_colors:
-            # Map to Navitone color scheme
-            colors = {
-                'accent': parsed_colors.get('accent', parsed_colors.get('blue', '#6272a4')),
-                'primary': parsed_colors.get('cyan', parsed_colors.get('blue', '#8be9fd')),
-                'secondary': parsed_colors.get('magenta', '#ff79c6'),
-                'success': parsed_colors.get('green', '#50fa7b'),
-                'warning': parsed_colors.get('yellow', '#f1fa8c'),
-                'error': parsed_colors.get('red', '#ff5555'),
-            }
-            return {
-                'theme_name': theme_name,
-                'colors': colors,
-                'background': background,
-                'foreground': foreground
-            }
+    # 1. Try colors.toml (Omarchy/Omarchy Quattro format)
+    colors_toml_candidates = [
+        theme_path / 'colors.toml',
+        theme_path / 'theme' / 'colors.toml',
+    ]
 
-    # Next try to read from custom_theme.json
+    for colors_toml_path in colors_toml_candidates:
+        if colors_toml_path.exists():
+            colors, palette, background, foreground = parse_colors_toml(colors_toml_path)
+            if colors:
+                vibrant_cava = [c for c in palette if c.upper() != background.upper()] if palette else []
+                return {
+                    'theme_name': theme_name,
+                    'colors': colors,
+                    'palette': palette,
+                    'cava_palette': cava_palette or (vibrant_cava if vibrant_cava else palette),
+                    'background': background,
+                    'foreground': foreground
+                }
+
+    # 2. Try custom_theme.json
     theme_json_path = theme_path / 'custom_theme.json'
     if theme_json_path.exists():
         try:
-            with open(theme_json_path, 'r') as f:
+            with open(theme_json_path, 'r', encoding='utf-8') as f:
                 theme_data = json.load(f)
 
             colors = {}
-
-            # Try to get terminal colors first
+            palette = []
             if 'colors' in theme_data and 'terminal' in theme_data['colors']:
-                terminal_colors = theme_data['colors']['terminal']
+                term = theme_data['colors']['terminal']
                 colors = {
-                    'accent': terminal_colors.get('blue', '#38d6fa'),
-                    'primary': terminal_colors.get('cyan', '#048ba8'),
-                    'secondary': terminal_colors.get('magenta', '#d35f5f'),
-                    'success': terminal_colors.get('green', '#a9fbd7'),
-                    'warning': terminal_colors.get('yellow', '#9f87af'),
-                    'error': terminal_colors.get('red', '#9c528b'),
+                    'accent': term.get('blue', '#38d6fa'),
+                    'primary': term.get('cyan', '#048ba8'),
+                    'secondary': term.get('magenta', '#d35f5f'),
+                    'success': term.get('green', '#a9fbd7'),
+                    'warning': term.get('yellow', '#9f87af'),
+                    'error': term.get('red', '#9c528b'),
                 }
-            # Fallback to alacritty normal colors
-            elif 'apps' in theme_data and 'alacritty' in theme_data['apps']:
-                alacritty_colors = theme_data['apps']['alacritty']['colors']['normal']
-                colors = {
-                    'accent': alacritty_colors.get('blue', '#38d6fa'),
-                    'primary': alacritty_colors.get('cyan', '#048ba8'),
-                    'secondary': alacritty_colors.get('magenta', '#d35f5f'),
-                    'success': alacritty_colors.get('green', '#a9fbd7'),
-                    'warning': alacritty_colors.get('yellow', '#9f87af'),
-                    'error': alacritty_colors.get('red', '#9c528b'),
-                }
+                palette = [v for v in term.values() if isinstance(v, str) and v.startswith('#')]
 
-            # Get background and foreground
-            background = '#000000'
-            foreground = '#ffffff'
+            background = '#282a36'
+            foreground = '#f8f8f2'
             if 'colors' in theme_data and 'primary' in theme_data['colors']:
                 background = theme_data['colors']['primary'].get('background', background)
                 foreground = theme_data['colors']['primary'].get('foreground', foreground)
-            elif 'apps' in theme_data and 'alacritty' in theme_data['apps']:
-                primary = theme_data['apps']['alacritty']['colors']['primary']
-                background = primary.get('background', background)
-                foreground = primary.get('foreground', foreground)
 
-            return {
-                'theme_name': theme_name,
-                'colors': colors,
-                'background': background,
-                'foreground': foreground
-            }
-
-        except (json.JSONDecodeError, KeyError) as e:
+            if colors:
+                return {
+                    'theme_name': theme_name,
+                    'colors': colors,
+                    'palette': palette,
+                    'cava_palette': cava_palette or palette,
+                    'background': background,
+                    'foreground': foreground
+                }
+        except Exception as e:
             print(f"Error reading JSON theme: {e}")
 
-    # Fallback: try to read from alacritty.toml
+    # 3. Fallback to alacritty.toml
     alacritty_toml = theme_path / 'alacritty.toml'
     if alacritty_toml.exists():
         try:
-            toml_colors, primary_colors = parse_toml_colors(alacritty_toml)
+            with open(alacritty_toml, 'r', encoding='utf-8') as f:
+                content = f.read()
 
-            # Check if we actually found any colors, if not, create a monochrome scheme (like Cava)
-            if not toml_colors:
-                # Try to extract foreground color from the file
-                foreground = '#EFEFEF'  # default
-                try:
-                    with open(alacritty_toml, 'r') as f:
-                        content = f.read()
-                    # Look for foreground in various formats
-                    fg_match = re.search(r'foreground\s*=\s*["\']?(?:#|0x)([a-fA-F0-9]{6})["\']?', content)
-                    if fg_match:
-                        foreground = '#' + fg_match.group(1)
-                except:
-                    pass
+            colors_map = {}
+            for line in content.split('\n'):
+                line = line.strip()
+                if '=' in line and ('#' in line or '0x' in line):
+                    k, v = line.split('=', 1)
+                    k = k.strip().split('.')[-1]
+                    m = re.search(r'(?:#|0x)([a-fA-F0-9]{6})', v)
+                    if m:
+                        colors_map[k] = '#' + m.group(1)
 
-                # Create monochrome gradient from dark to light (like midnight theme)
-                print(f"Theme has no color palette, using monochrome scheme with foreground: {foreground}")
-                colors = {
-                    'accent': '#777777',      # Medium gray for headers
-                    'primary': '#999999',     # Light gray for primary elements
-                    'secondary': '#BBBBBB',   # Lighter gray for selections
-                    'success': '#AAAAAA',     # Success in grayscale
-                    'warning': '#888888',     # Warning in grayscale
-                    'error': '#666666',       # Error in darker gray
-                }
-            else:
-                # Map available colors to Navitone color scheme
-                colors = {
-                    'accent': toml_colors.get('blue', '#6272a4'),
-                    'primary': toml_colors.get('cyan', '#8be9fd'),
-                    'secondary': toml_colors.get('magenta', '#ff79c6'),
-                    'success': toml_colors.get('green', '#50fa7b'),
-                    'warning': toml_colors.get('yellow', '#f1fa8c'),
-                    'error': toml_colors.get('red', '#ff5555'),
-                }
-
-            # Get background and foreground from primary colors or defaults
-            background = primary_colors.get('background', '#282a36')
-            foreground = primary_colors.get('foreground', '#f8f8f2')
-
-            # If no primary colors found, try to extract from content
-            if not primary_colors:
-                try:
-                    with open(alacritty_toml, 'r') as f:
-                        content = f.read()
-
-                    # Extract background
-                    bg_match = re.search(r'background\s*=\s*["\']?(?:#|0x)([a-fA-F0-9]{6})["\']?', content)
-                    if bg_match:
-                        background = '#' + bg_match.group(1)
-
-                    # Extract foreground
-                    fg_match = re.search(r'foreground\s*=\s*["\']?(?:#|0x)([a-fA-F0-9]{6})["\']?', content)
-                    if fg_match:
-                        foreground = '#' + fg_match.group(1)
-                except:
-                    pass
+            colors = {
+                'accent': colors_map.get('blue', '#6272a4'),
+                'primary': colors_map.get('cyan', '#8be9fd'),
+                'secondary': colors_map.get('magenta', '#ff79c6'),
+                'success': colors_map.get('green', '#50fa7b'),
+                'warning': colors_map.get('yellow', '#f1fa8c'),
+                'error': colors_map.get('red', '#ff5555'),
+            }
+            background = colors_map.get('background', '#282a36')
+            foreground = colors_map.get('foreground', '#f8f8f2')
 
             return {
                 'theme_name': theme_name,
                 'colors': colors,
+                'palette': list(colors.values()),
+                'cava_palette': cava_palette or list(colors.values()),
                 'background': background,
                 'foreground': foreground
             }
-
         except Exception as e:
-            print(f"Error reading TOML theme: {e}")
+            print(f"Error reading alacritty.toml theme: {e}")
 
     return None
 
 def generate_navitone_config(theme_data):
     """Generate Navitone theme configuration."""
+    colors_dict = theme_data['colors'].copy()
+    if theme_data.get('palette'):
+        colors_dict['palette'] = theme_data['palette']
+    if theme_data.get('cava_palette'):
+        colors_dict['cava_palette'] = theme_data['cava_palette']
+
     config = {
         'theme': {
             'name': f"omarchy-{theme_data['theme_name']}",
             'source': 'omarchy',
-            'colors': theme_data['colors'],
+            'colors': colors_dict,
             'background': theme_data['background'],
             'foreground': theme_data['foreground']
         }
@@ -429,31 +357,25 @@ def update_navitone_config(theme_config):
         return False
 
     try:
-        # Read the current config file as text to preserve formatting and comments
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
 
-        # Find existing [theme] section and remove it
         new_lines = []
         skip_theme_section = False
 
         for line in lines:
             line_stripped = line.strip()
 
-            # Check if we're entering the theme section or theme subsections
             if line_stripped == '[theme]' or line_stripped.startswith('[theme.'):
                 skip_theme_section = True
                 continue
 
-            # Check if we're entering a new section (exit theme section)
             if skip_theme_section and line_stripped.startswith('[') and not line_stripped.startswith('[theme'):
                 skip_theme_section = False
 
-            # Skip lines in theme section, but include lines from other sections
             if not skip_theme_section:
                 new_lines.append(line)
 
-        # Add the new theme section at the end
         if new_lines and not new_lines[-1].endswith('\n'):
             new_lines.append('\n')
 
@@ -463,14 +385,17 @@ def update_navitone_config(theme_config):
         new_lines.append('\n[theme.colors]\n')
 
         for color_name, color_value in theme_config["theme"]["colors"].items():
-            new_lines.append(f'{color_name} = "{color_value}"\n')
+            if isinstance(color_value, list):
+                formatted_list = ", ".join(f'"{v}"' for v in color_value)
+                new_lines.append(f'{color_name} = [{formatted_list}]\n')
+            else:
+                new_lines.append(f'{color_name} = "{color_value}"\n')
 
         new_lines.append(f'background = "{theme_config["theme"]["background"]}"\n')
         new_lines.append(f'foreground = "{theme_config["theme"]["foreground"]}"\n')
         new_lines.append('\n')
 
-        # Write the updated config
-        with open(config_path, 'w') as f:
+        with open(config_path, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
 
         return True
@@ -481,36 +406,29 @@ def update_navitone_config(theme_config):
 
 def main():
     """Main function to extract Omarchy colors and update Navitone config."""
-    print("Extracting Omarchy theme colors for Navitone...")
+    print("Extracting Omarchy Quattro theme colors for Navitone...")
 
-    # Get current theme path
     theme_path = get_current_theme_path()
     if not theme_path:
-        print("Could not find current Omarchy theme")
+        print("Could not find current Omarchy theme path")
         sys.exit(1)
 
     theme_name = get_current_theme_name() or theme_path.name
-    print(f"Current theme: {theme_name}")
+    print(f"Current Omarchy theme: {theme_name}")
 
-    # Extract colors from theme
     theme_data = extract_theme_colors(theme_path)
     if not theme_data:
         print("Could not extract colors from theme")
         sys.exit(1)
 
     print(f"Extracted colors: {theme_data['colors']}")
+    if theme_data.get('palette'):
+        print(f"Extracted Omarchy Quattro palette ({len(theme_data['palette'])} colors)")
+    if theme_data.get('cava_palette'):
+        print(f"Extracted Omarchy Cava palette ({len(theme_data['cava_palette'])} gradient colors)")
 
-    # Generate Navitone config
     navitone_config = generate_navitone_config(theme_data)
 
-    # Output for manual use
-    print("\n--- Navitone Theme Config (TOML) ---")
-    import io
-    output = io.StringIO()
-    simple_toml_dump(navitone_config, output)
-    print(output.getvalue())
-
-    # Update Navitone config directly
     if update_navitone_config(navitone_config):
         print("✅ Navitone config updated successfully!")
         print(f"Theme '{navitone_config['theme']['name']}' applied")

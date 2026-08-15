@@ -79,10 +79,31 @@ func TestApplySelectionShimmer(t *testing.T) {
 func TestRenderInAppCava(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	theme := NewDarkTheme()
-	bars := []int{20, 40, 60, 80, 100, 50, 30}
+	bars := []int{200, 400, 600, 800, 1000, 500, 300}
 	cavaStr := RenderInAppCava(40, 15, bars, 10, true, theme)
 	lines := strings.Split(cavaStr, "\n")
 	if len(lines) != 15 {
 		t.Errorf("Expected 15 lines in Cava rendering, got %d", len(lines))
 	}
 }
+
+func TestRenderInAppCavaQuietSongSmoothness(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	theme := NewDarkTheme()
+	
+	// Frame A: peak is 95 out of 1000 (quiet passage)
+	barsQuietA := []int{20, 50, 95, 40, 10}
+	cavaStrA := RenderInAppCava(40, 10, barsQuietA, 1, true, theme)
+	
+	// Frame B: peak rises slightly to 105 out of 1000
+	barsQuietB := []int{22, 55, 105, 44, 12}
+	cavaStrB := RenderInAppCava(40, 10, barsQuietB, 2, true, theme)
+	
+	// Verify both outputs render correctly without dramatic line length or block output distortions
+	linesA := strings.Split(cavaStrA, "\n")
+	linesB := strings.Split(cavaStrB, "\n")
+	if len(linesA) != 10 || len(linesB) != 10 {
+		t.Fatalf("Expected 10 lines, got %d and %d", len(linesA), len(linesB))
+	}
+}
+

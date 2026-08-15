@@ -121,6 +121,9 @@ func TestNormalizeRadioURL(t *testing.T) {
 	}{
 		{"https://stream.nightride.fm/nightride.m4a", "https://stream.nightride.fm/nightride.mp3"},
 		{"https://nightride.fm/stream/chillsynth.m4a", "https://nightride.fm/stream/chillsynth.mp3"},
+		{"https://stream.nightride.fm/datawave.m4a", "https://stream.nightride.fm/datawave.mp3"},
+		{"https://stream.nightride.fm/datawave", "https://stream.nightride.fm/datawave.mp3"},
+		{"https://stream.nightride.fm/datawave.opus", "https://stream.nightride.fm/datawave.mp3"},
 		{"https://stream.nightride.fm/nightride.mp3", "https://stream.nightride.fm/nightride.mp3"},
 		{"http://ice1.somafm.com/groovesalad-128-mp3", "http://ice1.somafm.com/groovesalad-128-mp3"},
 	}

@@ -63,12 +63,14 @@ type ThemeConfig struct {
 
 // ThemeColors contains the rich color palette for enhanced theming
 type ThemeColors struct {
-    Accent    string `toml:"accent"`    // Primary accent color (headers, highlights)
-    Primary   string `toml:"primary"`   // Primary UI color (tabs, borders)
-    Secondary string `toml:"secondary"` // Secondary accent (selections, focus)
-    Success   string `toml:"success"`   // Success states (play, connected)
-    Warning   string `toml:"warning"`   // Warning states (loading, partial)
-    Error     string `toml:"error"`     // Error states (failed, disconnected)
+    Accent      string   `toml:"accent"`       // Primary accent color (headers, highlights)
+    Primary     string   `toml:"primary"`      // Primary UI color (tabs, borders)
+    Secondary   string   `toml:"secondary"`    // Secondary accent (selections, focus)
+    Success     string   `toml:"success"`      // Success states (play, connected)
+    Warning     string   `toml:"warning"`      // Warning states (loading, partial)
+    Error       string   `toml:"error"`        // Error states (failed, disconnected)
+    Palette     []string `toml:"palette"`      // Extended 24-color Omarchy Quattro palette
+    CavaPalette []string `toml:"cava_palette"` // Cava spectrum visualizer vertical gradient palette
 }
 
 // ScrobblingConfig contains scrobbling service settings

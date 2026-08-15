@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Navitone Omarchy Theme Integration Setup
-# Sets up automatic theme synchronization between Omarchy and Navitone
+# Navitone Omarchy Quattro Theme Integration Setup
+# Sets up automatic theme synchronization between Omarchy Quattro and Navitone
 
 set -e
 
@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="navitone-theme-monitor"
 SERVICE_FILE="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
 
-echo "🎨 Navitone Omarchy Theme Integration Setup"
-echo "==========================================="
+echo "🎨 Navitone Omarchy Quattro Theme Integration Setup"
+echo "=================================================="
 
 # Check if Omarchy is installed
 check_omarchy() {
@@ -21,34 +21,30 @@ check_omarchy() {
         exit 1
     fi
 
-    # Support both new (directory + theme.name) and old (symlink) Omarchy structures
-    local theme_dir="$HOME/.config/omarchy/current/theme"
-    local theme_name_file="$HOME/.config/omarchy/current/theme.name"
+    local current_theme="unknown"
+    for name_file in "$HOME/.config/omarchy/current/theme.name" "$HOME/.config/omarchy/theme.name" "$HOME/.config/omarchy/active_theme" "$HOME/.config/omarchy/current/theme/theme.name"; do
+        if [ -f "$name_file" ]; then
+            current_theme=$(cat "$name_file")
+            break
+        fi
+    done
 
-    if [ -d "$theme_dir" ]; then
-        # New structure: theme is a directory
-        if [ -f "$theme_name_file" ]; then
-            current_theme=$(cat "$theme_name_file")
-        else
+    if [ "$current_theme" = "unknown" ]; then
+        local theme_dir="$HOME/.config/omarchy/current/theme"
+        if [ -L "$theme_dir" ]; then
+            current_theme=$(basename "$(readlink "$theme_dir")")
+        elif [ -d "$theme_dir" ]; then
             current_theme="current"
         fi
-        echo "✅ Omarchy installed with current theme: $current_theme"
-    elif [ -L "$theme_dir" ]; then
-        # Old structure: theme is a symlink
-        current_theme=$(basename "$(readlink "$theme_dir")")
-        echo "✅ Omarchy installed with current theme: $current_theme"
-    else
-        echo "⚠️  No current theme selected in Omarchy"
-        echo "Please select a theme in Omarchy first, then run this setup again"
-        exit 1
     fi
+
+    echo "✅ Omarchy Quattro installed with current theme: $current_theme"
 }
 
 # Check dependencies
 check_dependencies() {
     echo "Checking dependencies..."
 
-    # Check inotify-tools
     if ! command -v inotifywait &> /dev/null; then
         echo "❌ inotifywait not found. Installing inotify-tools..."
         if command -v apt &> /dev/null; then
@@ -63,14 +59,10 @@ check_dependencies() {
         fi
     fi
 
-    # Check Python and toml module
     if ! command -v python3 &> /dev/null; then
         echo "❌ python3 not found"
         exit 1
     fi
-
-    # Note: Script now uses built-in TOML parser, no external dependencies needed
-    echo "Python toml module not required (using built-in parser)"
 
     echo "✅ All dependencies satisfied"
 }
@@ -79,13 +71,11 @@ check_dependencies() {
 create_service() {
     echo "Creating systemd user service..."
 
-    # Create systemd user directory if it doesn't exist
     mkdir -p "$(dirname "$SERVICE_FILE")"
 
-    # Create service file
     cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=Navitone Omarchy Theme Monitor
+Description=Navitone Omarchy Quattro Theme Monitor
 After=graphical-session.target
 
 [Service]
@@ -119,7 +109,6 @@ test_sync() {
         echo "✅ Theme sync test successful"
     else
         echo "⚠️  Theme sync test failed - check if Navitone config exists"
-        echo "This is normal if you haven't run Navitone yet to create the config"
     fi
 }
 
@@ -130,8 +119,8 @@ show_status() {
     echo "=================="
     echo ""
     echo "The theme monitor service is now running and will:"
-    echo "• Automatically detect when you change Omarchy themes"
-    echo "• Update Navitone's color configuration"
+    echo "• Automatically detect when you change Omarchy Quattro themes"
+    echo "• Update Navitone's 24-color configuration"
     echo "• Send desktop notifications when themes change"
     echo ""
     echo "Service Management:"
@@ -142,10 +131,9 @@ show_status() {
     echo ""
     echo "Manual sync: $SCRIPT_DIR/extract-omarchy-colors.py"
     echo ""
-    echo "Note: Restart Navitone after theme changes to see new colors"
+    echo "Note: Press Shift+R in Navitone to reload theme colors live on demand"
 }
 
-# Main setup function
 main() {
     check_omarchy
     check_dependencies
@@ -155,7 +143,6 @@ main() {
     show_status
 }
 
-# Handle interruption
 cleanup() {
     echo ""
     echo "Setup interrupted"
@@ -164,5 +151,4 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
-# Run setup
 main "$@"

@@ -11,15 +11,45 @@ import (
 
 // OmarchyPalette returns the color stops for the active theme's gradient sequence
 func OmarchyPalette(theme Theme) []lipgloss.Color {
-	// Standard palette cycle across key Omarchy theme colors
-	return []lipgloss.Color{
+	if len(theme.Palette) >= 2 {
+		p := make([]lipgloss.Color, len(theme.Palette))
+		copy(p, theme.Palette)
+		// Ensure seamless loop back to initial color
+		if p[0] != p[len(p)-1] {
+			p = append(p, p[0])
+		}
+		return p
+	}
+
+	// Standard multi-color palette cycle across key Omarchy theme colors
+	palette := []lipgloss.Color{
 		theme.Primary,
 		theme.Secondary,
 		theme.Accent,
 		theme.Success,
 		theme.Warning,
-		theme.Primary, // Loop back to primary
 	}
+
+	var clean []lipgloss.Color
+	for _, c := range palette {
+		if string(c) != "" && (len(clean) == 0 || clean[len(clean)-1] != c) {
+			clean = append(clean, c)
+		}
+	}
+	if len(clean) < 2 {
+		return []lipgloss.Color{
+			lipgloss.Color("#8BE9FD"),
+			lipgloss.Color("#FF79C6"),
+			lipgloss.Color("#BD93F9"),
+			lipgloss.Color("#50FA7B"),
+			lipgloss.Color("#F1FA8C"),
+			lipgloss.Color("#8BE9FD"),
+		}
+	}
+	if clean[0] != clean[len(clean)-1] {
+		clean = append(clean, clean[0])
+	}
+	return clean
 }
 
 // parseHexColor converts a lipgloss.Color hex string to float RGB values (0-255)
@@ -54,33 +84,52 @@ func interpolateRGB(c1, c2 lipgloss.Color, factor float64) lipgloss.Color {
 	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", r, g, b))
 }
 
-// GetGradientColor calculates an interpolated color along the Omarchy palette sequence
-func GetGradientColor(step, totalSteps, tick int, theme Theme) lipgloss.Color {
+// GetGradientColorFloat calculates continuous TrueColor RGB interpolation with floating-point precision
+func GetGradientColorFloat(step, totalSteps, tick float64, theme Theme) lipgloss.Color {
 	if totalSteps <= 0 {
-		totalSteps = 1
+		totalSteps = 1.0
 	}
 
 	palette := OmarchyPalette(theme)
-	numSegments := len(palette) - 1
+	if len(palette) < 2 {
+		return theme.Primary
+	}
 
-	// Scale tick down for 60 FPS master framerate to maintain serene color morphing
-	slowTick := tick / 5
+	numSegments := float64(len(palette) - 1)
 
-	// Calculate shifted normalized position [0.0, 1.0)
-	normPos := math.Mod(float64(step+slowTick)/float64(totalSteps), 1.0)
+	// Smooth sub-frame animation offset (~25 seconds per full rotation)
+	animOffset := tick * 0.03
+
+	// Continuous normalized position [0.0, 1.0)
+	normPos := math.Mod((step+animOffset)/totalSteps, 1.0)
 	if normPos < 0 {
 		normPos += 1.0
 	}
 
-	// Determine segment and internal interpolation factor
-	scaled := normPos * float64(numSegments)
+	scaled := normPos * numSegments
 	segmentIdx := int(scaled)
-	if segmentIdx >= numSegments {
-		segmentIdx = numSegments - 1
+	if segmentIdx >= len(palette)-1 {
+		segmentIdx = len(palette) - 2
+	}
+	if segmentIdx < 0 {
+		segmentIdx = 0
 	}
 	factor := scaled - float64(segmentIdx)
 
-	return interpolateRGB(palette[segmentIdx], palette[segmentIdx+1], factor)
+	// Smoothstep S-curve for ultra-smooth continuous color blending
+	smoothFactor := factor * factor * (3.0 - 2.0*factor)
+
+	nextIdx := segmentIdx + 1
+	if nextIdx >= len(palette) {
+		nextIdx = len(palette) - 1
+	}
+
+	return interpolateRGB(palette[segmentIdx], palette[nextIdx], smoothFactor)
+}
+
+// GetGradientColor wraps GetGradientColorFloat for integer inputs
+func GetGradientColor(step, totalSteps, tick int, theme Theme) lipgloss.Color {
+	return GetGradientColorFloat(float64(step), float64(totalSteps), float64(tick), theme)
 }
 
 // RenderGradientBox wraps content in a box with a moving Omarchy gradient border
@@ -95,13 +144,17 @@ func RenderGradientBox(content string, width, height, tick int, theme Theme) str
 	innerWidth := width - 2
 	innerHeight := height - 2
 
-	// Split content into lines and ensure exactly innerHeight lines
+	// Split content into lines and ensure exactly innerHeight lines with exact innerWidth width
 	rawLines := strings.Split(content, "\n")
 	contentLines := make([]string, innerHeight)
 	for i := 0; i < innerHeight; i++ {
 		if i < len(rawLines) {
 			line := rawLines[i]
 			w := lipgloss.Width(line)
+			if w > innerWidth {
+				line = lipgloss.NewStyle().MaxWidth(innerWidth).Render(line)
+				w = lipgloss.Width(line)
+			}
 			if w < innerWidth {
 				line += strings.Repeat(" ", innerWidth-w)
 			}
@@ -111,44 +164,36 @@ func RenderGradientBox(content string, width, height, tick int, theme Theme) str
 		}
 	}
 
-	// Calculate perimeter steps
-	// Top: width, Right: innerHeight, Bottom: width, Left: innerHeight
 	totalPerimeter := 2*width + 2*innerHeight
 	step := 0
 
 	var builder strings.Builder
 
-	// --- Top Border Line ---
-	// Corner ╭
+	// Top Border Line
 	cTopLeft := GetGradientColor(step, totalPerimeter, tick, theme)
 	builder.WriteString(lipgloss.NewStyle().Foreground(cTopLeft).Render("╭"))
 	step++
 
-	// Horizontal top line ─
 	for x := 0; x < innerWidth; x++ {
 		c := GetGradientColor(step, totalPerimeter, tick, theme)
 		builder.WriteString(lipgloss.NewStyle().Foreground(c).Render("─"))
 		step++
 	}
 
-	// Corner ╮
 	cTopRight := GetGradientColor(step, totalPerimeter, tick, theme)
 	builder.WriteString(lipgloss.NewStyle().Foreground(cTopRight).Render("╮"))
 	step++
 	builder.WriteString("\n")
 
-	// --- Middle Content Lines with Left/Right Borders ---
+	// Middle Content Lines with Left/Right Borders
 	leftStepStart := totalPerimeter - 1
 
 	for i := 0; i < innerHeight; i++ {
-		// Left border │
 		cLeft := GetGradientColor(leftStepStart-i, totalPerimeter, tick, theme)
 		builder.WriteString(lipgloss.NewStyle().Foreground(cLeft).Render("│"))
 
-		// Content line
 		builder.WriteString(contentLines[i])
 
-		// Right border │
 		cRight := GetGradientColor(step, totalPerimeter, tick, theme)
 		builder.WriteString(lipgloss.NewStyle().Foreground(cRight).Render("│"))
 		step++
@@ -156,19 +201,16 @@ func RenderGradientBox(content string, width, height, tick int, theme Theme) str
 		builder.WriteString("\n")
 	}
 
-	// --- Bottom Border Line ---
-	// Corner ╰
+	// Bottom Border Line
 	cBottomLeft := GetGradientColor(leftStepStart-innerHeight, totalPerimeter, tick, theme)
 	builder.WriteString(lipgloss.NewStyle().Foreground(cBottomLeft).Render("╰"))
 
-	// Bottom line ─
 	bottomStepStart := leftStepStart - innerHeight - 1
 	for x := 0; x < innerWidth; x++ {
 		c := GetGradientColor(bottomStepStart-x, totalPerimeter, tick, theme)
 		builder.WriteString(lipgloss.NewStyle().Foreground(c).Render("─"))
 	}
 
-	// Corner ╯
 	cBottomRight := GetGradientColor(step, totalPerimeter, tick, theme)
 	builder.WriteString(lipgloss.NewStyle().Foreground(cBottomRight).Render("╯"))
 
@@ -194,8 +236,7 @@ func ApplySelectionShimmer(text string, isSelected bool, tick int, theme Theme) 
 		return text
 	}
 
-	// Slow, smooth color transition across 120 steps (~10 seconds per cycle)
-	gradColor := GetGradientColor(tick/6, 120, 0, theme)
+	gradColor := GetGradientColorFloat(0, 60, float64(tick)*0.5, theme)
 	style := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(theme.Background).
@@ -210,15 +251,65 @@ func RenderGradientText(text string, tick int, theme Theme) string {
 		return ""
 	}
 	runes := []rune(text)
-	totalSteps := 60
-	slowTick := tick / 5 // Gentle 400ms step progression
+	totalSteps := 60.0
+	tickF := float64(tick) * 0.5
 
 	var builder strings.Builder
 	for i, r := range runes {
-		c := GetGradientColor(i, totalSteps, slowTick, theme)
+		c := GetGradientColorFloat(float64(i), totalSteps, tickF, theme)
 		builder.WriteString(lipgloss.NewStyle().Foreground(c).Bold(true).Render(string(r)))
 	}
 	return builder.String()
+}
+
+// GetCavaGradientColorByPos calculates smooth vertical gradient colors by normalized position [0.0, 1.0]
+func GetCavaGradientColorByPos(normPos float64, theme Theme) lipgloss.Color {
+	normPos = math.Max(0, math.Min(1, normPos))
+
+	palette := theme.CavaPalette
+	if len(palette) < 2 {
+		palette = OmarchyPalette(theme)
+	}
+
+	numColors := len(palette)
+	if numColors == 0 {
+		return theme.Primary
+	}
+	if numColors == 1 {
+		return palette[0]
+	}
+
+	scaled := normPos * float64(numColors-1)
+	idx := int(scaled)
+	if idx >= numColors-1 {
+		idx = numColors - 2
+	}
+	if idx < 0 {
+		idx = 0
+	}
+	factor := scaled - float64(idx)
+
+	// Smoothstep S-curve for silky smooth Cava color transitions between rows
+	smoothFactor := factor * factor * (3.0 - 2.0*factor)
+
+	nextIdx := idx + 1
+	if nextIdx >= numColors {
+		nextIdx = numColors - 1
+	}
+
+	return interpolateRGB(palette[idx], palette[nextIdx], smoothFactor)
+}
+
+// GetCavaGradientColor calculates vertical gradient colors for Cava spectrum bars
+func GetCavaGradientColor(row, totalRows int, theme Theme) lipgloss.Color {
+	if totalRows <= 0 {
+		totalRows = 1
+	}
+	if totalRows == 1 {
+		return GetCavaGradientColorByPos(0.5, theme)
+	}
+	normPos := float64(row) / float64(totalRows-1)
+	return GetCavaGradientColorByPos(normPos, theme)
 }
 
 // RenderInAppCava renders an integrated multi-bar Cava audio spectrum visualizer matching system Cava config
@@ -227,7 +318,6 @@ func RenderInAppCava(width, height int, bars []int, tick int, isPlaying bool, th
 		return ""
 	}
 
-	// Exact Unicode sub-cell fractional block characters from 1/8th to 8/8ths
 	subBlocks := []string{
 		" ",      // 0: Empty space
 		"\u2581", // 1: Lower 1/8th block
@@ -248,7 +338,6 @@ func RenderInAppCava(width, height int, bars []int, tick int, isPlaying bool, th
 		numBars = 1
 	}
 
-	// Determine max range of raw Cava output (default 1000.0)
 	maxRange := 1000.0
 	if len(bars) > 0 {
 		maxVal := 0
@@ -257,38 +346,37 @@ func RenderInAppCava(width, height int, bars []int, tick int, isPlaying bool, th
 				maxVal = b
 			}
 		}
-		if maxVal <= 100 && maxVal > 0 {
-			maxRange = 100.0
+		if float64(maxVal) > maxRange {
+			maxRange = float64(maxVal)
 		}
 	}
 
-	// Map raw bars to normalized heights with 1.2x balanced sensitivity gain
 	sensGain := 1.2
 	maxH := float64(height)
 	rawHeights := make([]float64, numBars)
-	if len(bars) >= numBars {
+	if len(bars) > 0 {
 		for i := 0; i < numBars; i++ {
-			val := (float64(bars[i]) / maxRange) * sensGain * maxH
-			if val > maxH {
-				val = maxH
+			var val float64
+			if len(bars) == 1 {
+				val = (float64(bars[0]) / maxRange) * sensGain * maxH
+			} else {
+				pos := float64(i) * float64(len(bars)-1) / float64(max(1, numBars-1))
+				idx := int(pos)
+				frac := pos - float64(idx)
+				if idx >= len(bars)-1 {
+					val = (float64(bars[len(bars)-1]) / maxRange) * sensGain * maxH
+				} else {
+					interpolated := (1.0-frac)*float64(bars[idx]) + frac*float64(bars[idx+1])
+					val = (interpolated / maxRange) * sensGain * maxH
+				}
 			}
-			rawHeights[i] = val
-		}
-	} else if len(bars) > 0 {
-		for i := 0; i < numBars; i++ {
-			idx := int((float64(i) / float64(numBars)) * float64(len(bars)))
-			if idx >= len(bars) {
-				idx = len(bars) - 1
-			}
-			val := (float64(bars[idx]) / maxRange) * sensGain * maxH
 			if val > maxH {
 				val = maxH
 			}
 			rawHeights[i] = val
 		}
 	} else {
-		// Dynamic fallback matching noise reduction
-		t := float64(tick) * 0.12
+		t := float64(tick) * 0.08
 		for i := 0; i < numBars; i++ {
 			fi := float64(i)
 			if isPlaying {
@@ -307,21 +395,21 @@ func RenderInAppCava(width, height int, bars []int, tick int, isPlaying bool, th
 		}
 	}
 
-	// 3-tap Gaussian spatial smoothing filter across bars
 	barHeights := make([]float64, numBars)
 	for i := 0; i < numBars; i++ {
 		left := rawHeights[max(0, i-1)]
 		mid := rawHeights[i]
 		right := rawHeights[min(numBars-1, i+1)]
-		barHeights[i] = 0.2*left + 0.6*mid + 0.2*right
+		barHeights[i] = 0.15*left + 0.70*mid + 0.15*right
 	}
 
 	lines := make([]strings.Builder, height)
 
-	// Static vertical gradient colors from bottom row (0) to top row (height-1)
+	// Continuous vertical gradient color interpolation per row
 	rowColors := make([]lipgloss.Color, height)
 	for r := 0; r < height; r++ {
-		rowColors[r] = GetGradientColor(r, height, 0, theme)
+		midPos := (float64(r) + 0.5) / float64(height)
+		rowColors[r] = GetCavaGradientColorByPos(midPos, theme)
 	}
 
 	for row := 0; row < height; row++ {
@@ -336,10 +424,8 @@ func RenderInAppCava(width, height int, bars []int, tick int, isPlaying bool, th
 			var barSegment string
 
 			if subPixels >= cellTopSub {
-				// Completely filled cell: 2 full blocks
 				barSegment = "\u2588\u2588"
 			} else if subPixels > cellBottomSub {
-				// Top peak sub-cell: 2 fractional blocks
 				subIdx := int(math.Round(subPixels - cellBottomSub))
 				if subIdx < 1 {
 					subIdx = 1
@@ -350,13 +436,12 @@ func RenderInAppCava(width, height int, bars []int, tick int, isPlaying bool, th
 				bChar := subBlocks[subIdx]
 				barSegment = bChar + bChar
 			} else {
-				// Empty cell
 				barSegment = "  "
 			}
 
 			lineBuilder.WriteString(rowStyle.Render(barSegment))
 			if i < numBars-1 {
-				lineBuilder.WriteString(" ") // 1 space gap between bars
+				lineBuilder.WriteString(" ")
 			}
 		}
 

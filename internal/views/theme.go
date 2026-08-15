@@ -17,6 +17,10 @@ type Theme struct {
     Background     lipgloss.Color // Background color
     Foreground     lipgloss.Color // Foreground/text color
 
+    // Omarchy Quattro 24-color extended palette support
+    Palette        []lipgloss.Color // Color sequence for moving gradients
+    CavaPalette    []lipgloss.Color // Color sequence for Cava audio visualizer vertical gradient
+
     // Theme metadata
     Name           string         // Theme name (e.g., "omarchy-dracula")
     Source         string         // "omarchy", "manual", or "builtin"
@@ -49,6 +53,16 @@ func NewThemeFromConfig(themeConfig interface{}) Theme {
 
 // NewThemeFromConfigStruct creates a theme from a concrete ThemeConfig struct
 func NewThemeFromConfigStruct(name, source, background, foreground string, colors map[string]string) Theme {
+    return NewThemeFromConfigStructWithPalette(name, source, background, foreground, colors, nil)
+}
+
+// NewThemeFromConfigStructWithPalette creates a theme with an optional 24-color extended palette and Cava palette
+func NewThemeFromConfigStructWithPalette(name, source, background, foreground string, colors map[string]string, paletteHex []string) Theme {
+    return NewThemeFromConfigStructWithCavaPalette(name, source, background, foreground, colors, paletteHex, nil)
+}
+
+// NewThemeFromConfigStructWithCavaPalette creates a theme with both extended gradient palette and Cava vertical gradient palette
+func NewThemeFromConfigStructWithCavaPalette(name, source, background, foreground string, colors map[string]string, paletteHex []string, cavaPaletteHex []string) Theme {
     theme := NewDarkTheme() // Start with defaults
 
     // Set metadata
@@ -81,6 +95,26 @@ func NewThemeFromConfigStruct(name, source, background, foreground string, color
     }
     if foreground != "" {
         theme.Foreground = lipgloss.Color(foreground)
+    }
+
+    // Set palette if provided
+    if len(paletteHex) > 0 {
+        theme.Palette = make([]lipgloss.Color, 0, len(paletteHex))
+        for _, hex := range paletteHex {
+            if hex != "" {
+                theme.Palette = append(theme.Palette, lipgloss.Color(hex))
+            }
+        }
+    }
+
+    // Set Cava palette if provided
+    if len(cavaPaletteHex) > 0 {
+        theme.CavaPalette = make([]lipgloss.Color, 0, len(cavaPaletteHex))
+        for _, hex := range cavaPaletteHex {
+            if hex != "" {
+                theme.CavaPalette = append(theme.CavaPalette, lipgloss.Color(hex))
+            }
+        }
     }
 
     return theme
@@ -257,7 +291,6 @@ func NewThemedStyles(theme Theme) ThemedStyles {
             Padding(0, 1),
         Content: lipgloss.NewStyle().
             Foreground(theme.Foreground).
-            Padding(1).
             Border(lipgloss.RoundedBorder()).
             BorderForeground(theme.Primary),
         Footer: lipgloss.NewStyle().

@@ -53,14 +53,14 @@ func (a *App) startCavaPipe() {
 	tmpDir := os.TempDir()
 	cfgPath := filepath.Join(tmpDir, "navitone_cava_raw.conf")
 	cfgContent := `[general]
-framerate = 120
-sensitivity = 165
+framerate = 60
+sensitivity = 100
 autosens = 1
 bars = 0
 bar_width = 2
 bar_spacing = 1
-lower_cutoff_freq = 40
-higher_cutoff_freq = 20000
+lower_cutoff_freq = 30
+higher_cutoff_freq = 18000
 
 [input]
 method = pulse
@@ -76,7 +76,12 @@ channels = mono
 mono_option = average
 
 [smoothing]
-noise_reduction = 80
+integral = 77
+monstercat = 1
+waves = 0
+gravity = 100
+ignore = 0
+noise_reduction = 77
 `
 	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
 		a.logMessage(fmt.Sprintf("Failed to write Cava temp config: %v", err))

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"navitone-cli/internal/models"
+	"navitone-cli/internal/utils"
 	"navitone-cli/pkg/navidrome"
 	"navitone-cli/pkg/scrobbling"
 	"net/http"
@@ -621,19 +622,24 @@ func (m *Manager) playTrackAtIndexLocked(index int) error {
 	if index == 0 || m.currentIndex == -1 {
 	}
 	
+	cleanPath := strings.TrimSpace(track.Path)
+
 	isRadio := track.Album == "Internet Radio" || track.Artist == "Radio Stream" ||
-		strings.HasPrefix(track.ID, "rad-") || strings.HasPrefix(track.Path, "http://") || strings.HasPrefix(track.Path, "https://")
+		strings.HasPrefix(track.ID, "rad-") || strings.HasPrefix(cleanPath, "http://") || strings.HasPrefix(cleanPath, "https://")
 
 	var streamURL string
 	var fallbackURL string
 
 	if isRadio {
-		directURL := track.Path
-		if strings.Contains(directURL, "nightride.fm") && strings.HasSuffix(directURL, ".m4a") {
-			directURL = strings.TrimSuffix(directURL, ".m4a") + ".mp3"
-		}
+		directURL := utils.NormalizeRadioURL(cleanPath)
+		isNightride := strings.Contains(strings.ToLower(cleanPath), "nightride.fm")
 
-		if m.navidromeClient != nil && track.ID != "" {
+		if isNightride && directURL != "" {
+			streamURL = directURL
+			if m.navidromeClient != nil && track.ID != "" && !strings.HasPrefix(track.ID, "rad-") {
+				fallbackURL = m.navidromeClient.GetStreamURL(track.ID)
+			}
+		} else if m.navidromeClient != nil && track.ID != "" && !strings.HasPrefix(track.ID, "rad-") {
 			streamURL = m.navidromeClient.GetStreamURL(track.ID)
 			fallbackURL = directURL
 		} else {

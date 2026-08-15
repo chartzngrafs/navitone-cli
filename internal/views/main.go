@@ -1504,6 +1504,9 @@ func (v *MainView) renderControlBar() string {
 	}
 
 	hotkeys := v.controlBarHotkeys()
+	if lipgloss.Width(hotkeys) > innerWidth {
+		hotkeys = v.truncateToWidth(hotkeys, innerWidth)
+	}
 	hotkeysW := lipgloss.Width(hotkeys)
 	
 	var line3Left string
@@ -1544,21 +1547,21 @@ func (v *MainView) controlBarHotkeys() string {
 	}
 	switch v.state.CurrentTab {
 	case models.HomeTab:
-		return "Enter Select • Shift+Enter Queue • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
+		return "Enter Select • Shift+R Refresh • / Search • Shift+C/Z/G Flair"
 	case models.AlbumsTab:
-		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
+		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search"
 	case models.ArtistsTab:
-		return "Enter Albums • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
+		return "Enter Albums • A Queue • Shift+S Sort • Shift+R Refresh • / Search"
 	case models.PlaylistsTab:
-		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
+		return "Enter Tracks • A Queue • Shift+S Sort • Shift+R Refresh • / Search"
 	case models.RadioTab:
-		return "Enter Play • A Queue • Shift+R Refresh • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
+		return "Enter Play • A Queue • Shift+R Refresh • / Search"
 	case models.QueueTab:
-		return "Space Play • Alt+←/→ Skip • Shift+↑/↓ Vol • X Del • C Clear • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
+		return "Space Play • Alt+←/→ Skip • Shift+↑/↓ Vol • X Del • C Clear"
 	case models.ConfigTab:
-		return "Enter Edit • F2 Save • F3 Test • Shift+C Cava • Shift+Z Zen • Shift+G Flair"
+		return "Enter Edit • F2 Save • F3 Test Connection"
 	default:
-		return "Space Play • Alt+←/→ Skip • / Search • Shift+C Cava • Shift+Z Zen • Shift+G Flair • q Quit"
+		return "Space Play • Alt+←/→ Skip • / Search • q Quit"
 	}
 }
 

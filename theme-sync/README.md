@@ -1,17 +1,18 @@
-# Navitone Omarchy Theme Integration
+# Navitone Omarchy Quattro Theme Integration
 
-Automatically synchronize [Navitone-CLI](https://github.com/yourusername/navitone-cli) colors with your current [Omarchy](https://github.com/aredl/omarchy) theme in real-time.
+Automatically synchronize [Navitone-CLI](https://github.com/yourusername/navitone-cli) colors with your current [Omarchy 4.0 Quattro](https://github.com/aredl/omarchy) desktop theme in real-time.
 
-> **Note**: This is a personal integration for individual use and is **not part of the main Navitone project**. It's gitignored and separate from the core application.
+> **Note**: This integration supports Omarchy 4.0 Quattro 24-color palettes, Base24 schemes, and Cava vertical gradient palettes.
 
 ## Features
 
 - ✅ **Real-time theme synchronization** - Colors update automatically when you switch Omarchy themes
-- ✅ **Universal theme support** - Works with JSON and TOML theme formats
-- ✅ **Smart color mapping** - Maps Omarchy colors to Navitone's UI elements
+- ✅ **Omarchy 4.0 Quattro support** - Multi-path resolution for `~/.local/state/omarchy/current/theme/` state directories
+- ✅ **24-Color & Base24 Schemas** - Parses 24-color extended palettes (`color0`..`color23`) and Base24 schemes (`base00`..`base17`)
+- ✅ **Vertical Cava Visualizer Palette** - Extracts `cava_theme` or generates background-filtered spectrum gradient colors
+- ✅ **Live Hotkey Reload (`Shift+R`)** - Instant live theme refresh inside Navitone without restarting
 - ✅ **Desktop notifications** - Get notified when colors update
-- ✅ **Systemd integration** - Runs as a background service
-- ✅ **Manual sync option** - Force update when needed
+- ✅ **Systemd integration** - Runs as a background monitoring service
 
 ## Quick Setup
 
@@ -24,17 +25,17 @@ cd theme-sync/
 ```
 
 The setup script will:
-1. Check for Omarchy installation and current theme
-2. Install missing dependencies (inotify-tools, python-toml)
-3. Create and enable a systemd user service
+1. Check for Omarchy Quattro installation and current theme
+2. Install missing dependencies (`inotify-tools`, `python-toml`)
+3. Create and enable a systemd user service (`navitone-theme-monitor.service`)
 4. Test the initial theme sync
-5. Start monitoring for theme changes
+5. Start monitoring for theme changes across `~/.local/state/omarchy/` and `~/.config/omarchy/`
 
 ## Manual Usage
 
 ### One-time Theme Sync
 ```bash
-# Extract current Omarchy theme and update Navitone config
+# Extract current Omarchy Quattro theme and update Navitone config
 ./extract-omarchy-colors.py
 ```
 
@@ -46,29 +47,31 @@ The setup script will:
 
 ## How It Works
 
-1. **Monitors** `~/.config/omarchy/current/theme` for changes using inotifywait
-2. **Extracts** colors from theme files (`custom_theme.json` or `alacritty.toml`)
-3. **Maps** Omarchy colors to Navitone UI elements:
-   - `blue/cyan` → Accent colors (headers, highlights)
-   - `magenta` → Secondary colors (selections)
-   - `green` → Success indicators
-   - `yellow` → Warning colors
-   - `red` → Error colors
-4. **Updates** Navitone's `~/.config/navitone-cli/config.toml`
-5. **Notifies** you to restart Navitone to see changes
+1. **Monitors** `~/.local/state/omarchy/` and `~/.config/omarchy/` for filesystem events using `inotifywait`
+2. **Extracts** colors from theme files (`colors.toml`, `cava_theme`, `custom_theme.json`, or `alacritty.toml`)
+3. **Parses** 24-color Quattro palettes (`color0`..`color23`) and Base24 schemes (`base00`..`base17`)
+4. **Maps** Omarchy colors to Navitone UI semantic roles:
+   - `color4/color12/accent` → Accent & Primary colors
+   - `color5/color13/secondary` → Selection indicators
+   - `color2/color10/success` → Success & Play states
+   - `color3/color11/warning` → Warning states
+   - `color1/color9/error` → Error states
+5. **Generates** `cava_palette` from `cava_theme` or filters background colors from `palette` for maximum contrast
+6. **Updates** Navitone's `~/.config/navitone-cli/config.toml`
+7. **Notifies** you to press `Shift+R` in Navitone to apply changes live!
 
 ## Color Mapping
 
-| Omarchy Color | Navitone Usage |
-|---------------|----------------|
-| `blue`        | Primary accent (headers, active elements) |
-| `cyan`        | Secondary accent (highlights) |
-| `magenta`     | Selection indicators |
-| `green`       | Success states, play indicators |
-| `yellow`      | Warning states |
-| `red`         | Error states, stop indicators |
-| `background`  | Terminal background (preserved) |
-| `foreground`  | Text color |
+| Omarchy Color Key | Navitone Usage |
+|-------------------|----------------|
+| `accent` / `color4` / `color12` | Primary accent (headers, active borders) |
+| `secondary` / `color5` / `color13` | Selection indicators, highlights |
+| `success` / `color2` / `color10` | Success states, play indicators |
+| `warning` / `color3` / `color11` | Warning states, buffering |
+| `error` / `color1` / `color9` | Error states, stop indicators |
+| `color0` .. `color23` | Extended 24-color moving gradient palette |
+| `gradient_color_1` .. `N` | Cava vertical spectrum visualizer gradient |
+| `background` / `foreground` | Interface background & text colors |
 
 ## Service Management
 
@@ -91,21 +94,6 @@ systemctl --user disable navitone-theme-monitor
 tail -f theme-monitor.log
 ```
 
-## Supported Themes
-
-- ✅ **JSON themes** with `custom_theme.json` (complex themes)
-- ✅ **TOML themes** with `alacritty.toml` (standard themes)
-- ✅ **Multiple hex formats** (`#xxxxxx`, `0xxxxxxx`)
-- ✅ **Section-aware parsing** (`[colors.normal]`, `[colors.bright]`)
-- ✅ **All standard Omarchy themes**
-
-## Usage Workflow
-
-1. Change your Omarchy theme (e.g., `omarchy dracula`)
-2. Receive desktop notification: *"Navitone Theme Updated - Restart Navitone to see changes"*
-3. Restart Navitone to see the new colors
-4. Enjoy synchronized theming!
-
 ## Files
 
 - `extract-omarchy-colors.py` - Core color extraction and config updating
@@ -113,50 +101,6 @@ tail -f theme-monitor.log
 - `setup.sh` - Automated installation and service setup
 - `theme-monitor.log` - Activity log file
 
-## Requirements
-
-- [Omarchy](https://github.com/aredl/omarchy) theme manager
-- `inotify-tools` package (auto-installed by setup)
-- Python 3.6+ with `toml` module (auto-installed by setup)
-
-## Troubleshooting
-
-### Service not starting
-```bash
-# Check service logs
-journalctl --user -u navitone-theme-monitor -f
-```
-
-### Theme not updating
-```bash
-# Test manual sync
-./extract-omarchy-colors.py
-
-# Check if Omarchy theme is selected
-ls -la ~/.config/omarchy/current/theme
-```
-
-### Missing dependencies
-```bash
-# Reinstall dependencies
-sudo apt install inotify-tools  # Ubuntu/Debian
-pip3 install --user toml
-```
-
-## Uninstall
-
-```bash
-# Stop and disable service
-systemctl --user stop navitone-theme-monitor
-systemctl --user disable navitone-theme-monitor
-
-# Remove service file
-rm ~/.config/systemd/user/navitone-theme-monitor.service
-
-# Remove theme-sync directory
-rm -rf theme-sync/
-```
-
 ## License
 
-Same as main Navitone project (MIT License)
+MIT License (Same as main Navitone project)

@@ -1,14 +1,15 @@
 package mpv
 
 import (
-    "fmt"
-    "math/rand"
-    "navitone-cli/internal/models"
-    "navitone-cli/pkg/navidrome"
-    "navitone-cli/pkg/scrobbling"
-    "strings"
-    "sync"
-    "time"
+	"fmt"
+	"math/rand"
+	"navitone-cli/internal/models"
+	"navitone-cli/internal/utils"
+	"navitone-cli/pkg/navidrome"
+	"navitone-cli/pkg/scrobbling"
+	"strings"
+	"sync"
+	"time"
 )
 
 // Manager handles MPV-based audio playback and queue management
@@ -593,31 +594,32 @@ func (m *Manager) playTrackAtIndexLocked(index int) error {
 	}
 
 	track := m.queue[index]
+	cleanPath := strings.TrimSpace(track.Path)
 
 	// Determine if this track is an internet radio station
 	isRadio := track.Album == "Internet Radio" || track.Artist == "Radio Stream" ||
-		strings.HasPrefix(track.ID, "rad-") || strings.HasPrefix(track.Path, "http://") || strings.HasPrefix(track.Path, "https://")
+		strings.HasPrefix(track.ID, "rad-") || strings.HasPrefix(cleanPath, "http://") || strings.HasPrefix(cleanPath, "https://")
 
 	var streamURL string
 	var fallbackURL string
 
 	if isRadio {
-		// Normalize direct stream URL (e.g. Nightride FM deprecated .m4a -> .mp3)
-		directURL := track.Path
-		if strings.Contains(directURL, "nightride.fm") && strings.HasSuffix(directURL, ".m4a") {
-			directURL = strings.TrimSuffix(directURL, ".m4a") + ".mp3"
-		}
+		// Normalize direct stream URL (e.g. Nightride FM deprecated/un-extensioned streams -> .mp3, trim whitespace)
+		directURL := utils.NormalizeRadioURL(cleanPath)
+		isNightride := strings.Contains(strings.ToLower(cleanPath), "nightride.fm")
 
-		if m.navidromeClient != nil && track.ID != "" {
-			// Navidrome server proxies radio stations via Subsonic API /rest/stream?id=<radio_id>
-			// This matches Navidrome Web UI behavior and ensures server-side playlist resolution, proxying, & header handling.
+		if isNightride && directURL != "" {
+			// Nightride FM streams require direct streaming to normalized .mp3 Icecast mount points
+			streamURL = directURL
+			if m.navidromeClient != nil && track.ID != "" && !strings.HasPrefix(track.ID, "rad-") {
+				fallbackURL = m.navidromeClient.GetStreamURL(track.ID)
+			}
+		} else if m.navidromeClient != nil && track.ID != "" && !strings.HasPrefix(track.ID, "rad-") {
+			// Other radio stations prefer Navidrome server proxy (/rest/stream?id=...) for server-side resolution
 			streamURL = m.navidromeClient.GetStreamURL(track.ID)
 			fallbackURL = directURL
 		} else {
 			streamURL = directURL
-			if m.navidromeClient != nil && track.ID != "" {
-				fallbackURL = m.navidromeClient.GetStreamURL(track.ID)
-			}
 		}
 	} else {
 		streamURL = track.Path
